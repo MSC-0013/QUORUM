@@ -214,8 +214,7 @@ describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
     });
     expect(snapResult.status.code).toBe('STATUS_CODE_OK');
 
-    // Remaining future milestone RPCs
-    await testUnimplemented((cb) => nodeClient.Replicate({}, cb));
+    // Remaining future milestone RPCs (Q6 & Q8)
     await testUnimplemented((cb) => nodeClient.ReadDigest({}, cb));
     await testUnimplemented((cb) => nodeClient.Repair({}, cb));
     await testUnimplemented((cb) => nodeClient.PrepareWrite({}, cb));

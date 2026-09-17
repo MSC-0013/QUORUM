@@ -2,6 +2,7 @@ import * as grpc from '@grpc/grpc-js';
 import { NodeEngine } from '../engine/nodeEngine.js';
 import { ProtoStatusCode } from '@quorum-lab/protocol';
 import { IdempotencyConflictError } from '@quorum-lab/storage';
+import { VersionedEntry } from '@quorum-lab/consistency';
 
 export class NodeServiceImpl {
   private readonly engine: NodeEngine;
@@ -286,15 +287,76 @@ export class NodeServiceImpl {
     }
   };
 
-  // The following RPCs remain UNIMPLEMENTED for future milestones
-  public replicate = (
-    _call: grpc.ServerUnaryCall<any, any>,
+  // Q2 Replication Milestone Implementation of Replicate
+  public replicate = async (
+    call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
-    callback({
-      code: grpc.status.UNIMPLEMENTED,
-      message: 'Replicate is not implemented in Milestone Q1 (scheduled for Q2)'
-    });
+  ): Promise<void> => {
+    try {
+      const {
+        key,
+        entry,
+        operation_id,
+        request_id,
+        source_node,
+        membership_hash,
+        fencing_epoch
+      } = call.request;
+
+      if (!entry || !entry.version) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: 'Valid entry with version is required for Replicate'
+        });
+        return;
+      }
+
+      const rawVal = entry.value;
+      const valueBytes = Buffer.isBuffer(rawVal)
+        ? new Uint8Array(rawVal)
+        : rawVal instanceof Uint8Array
+          ? rawVal
+          : rawVal && rawVal.length > 0
+            ? new Uint8Array(Buffer.from(rawVal))
+            : null;
+
+      const versionedEntry: VersionedEntry = {
+        value: valueBytes,
+        tombstone: Boolean(entry.tombstone),
+        version: {
+          dot: {
+            nodeId: entry.version.dot.node_id,
+            counter: Number(entry.version.dot.counter)
+          },
+          vectorClock: entry.version.vector_clock?.entries ?? {},
+          lamport: Number(entry.version.lamport),
+          wallTimeMs: Number(entry.version.wall_time_ms)
+        }
+      };
+
+      const result = await this.engine.applyReplicatedEntry({
+        key,
+        entry: versionedEntry,
+        operationId: operation_id ?? '',
+        requestId: request_id ?? '',
+        sourceNode: source_node ?? '',
+        membershipHash: membership_hash ?? '',
+        fencingEpoch: Number(fencing_epoch ?? 0)
+      });
+
+      callback(null, {
+        status: {
+          code: result.status,
+          message: result.message ?? (result.status === ProtoStatusCode.STATUS_CODE_OK ? 'OK' : 'REJECTED')
+        },
+        durable_acked: result.durableAcked
+      });
+    } catch (err: any) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: err?.message ?? 'Internal error during Replicate'
+      });
+    }
   };
 
   public readDigest = (

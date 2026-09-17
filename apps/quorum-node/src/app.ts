@@ -13,6 +13,14 @@ import { NodeEngine } from './engine/nodeEngine.js';
 import { NodeServiceImpl } from './service/nodeServiceImpl.js';
 import { HealthServiceImpl } from './service/healthServiceImpl.js';
 
+import { LocalDurabilityMode } from '@quorum-lab/storage';
+import { ReplicationMode } from './engine/nodeEngine.js';
+
+export interface QuorumNodeAppOptions {
+  durabilityMode?: LocalDurabilityMode;
+  replicationMode?: ReplicationMode;
+}
+
 export class QuorumNodeApp {
   public readonly config: AppConfig;
   public readonly lifecycle: NodeLifecycle;
@@ -24,7 +32,7 @@ export class QuorumNodeApp {
   private readonly server: grpc.Server;
   private boundPort = 0;
 
-  constructor(config: AppConfig) {
+  constructor(config: AppConfig, options?: QuorumNodeAppOptions) {
     this.config = config;
     this.lifecycle = new NodeLifecycle();
     this.clocks = new DefaultNodeClocks(config.node.id);
@@ -45,9 +53,14 @@ export class QuorumNodeApp {
     this.store = new MemStore();
     this.storage = new StorageEngine({
       dataDir: config.node.dataDir,
-      durabilityMode: 'SYNC_FSYNC'
+      durabilityMode: options?.durabilityMode ?? 'SYNC_FSYNC'
     });
-    this.engine = new NodeEngine(this.runtime, this.storage, this.store);
+    this.engine = new NodeEngine(
+      this.runtime,
+      this.storage,
+      this.store,
+      options?.replicationMode ?? 'NONE'
+    );
     this.server = new grpc.Server();
 
     this.registerServices();

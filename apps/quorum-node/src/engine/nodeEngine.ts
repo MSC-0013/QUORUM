@@ -1,12 +1,25 @@
 import {
   KeyState,
   VersionFrontier,
-  VersionStamp
+  VersionStamp,
+  VersionedEntry
 } from '@quorum-lab/consistency';
 import {
   StorageEngine,
-  WalRecordType
+  WalRecordType,
+  WalRecordEnvelope,
+  encodeWalEnvelope,
+  serializePutPayload,
+  serializeDeletePayload
 } from '@quorum-lab/storage';
+import { ProtoStatusCode } from '@quorum-lab/protocol';
+import {
+  ReplicationEngine,
+  SyncReplicationEngine,
+  AsyncReplicationEngine,
+  PeerClientPool,
+  ReplicationResult
+} from '@quorum-lab/replication';
 import { MemStore } from './memStore.js';
 import { NodeRuntimeState } from '../runtime/nodeState.js';
 import { MutationExecutor } from './mutationExecutor.js';
@@ -16,6 +29,7 @@ export interface NodeEnginePutResult {
   frontier: VersionFrontier;
   sequence: bigint;
   isDuplicate: boolean;
+  replicationResult?: ReplicationResult;
 }
 
 export interface NodeEngineDeleteResult {
@@ -23,6 +37,7 @@ export interface NodeEngineDeleteResult {
   frontier: VersionFrontier;
   sequence: bigint;
   isDuplicate: boolean;
+  replicationResult?: ReplicationResult;
 }
 
 export interface NodeEngineGetResult {
@@ -30,13 +45,22 @@ export interface NodeEngineGetResult {
   frontier: VersionFrontier;
 }
 
+export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC';
+
 export class NodeEngine {
   public readonly store: MemStore;
   public readonly runtime: NodeRuntimeState;
   public readonly storage: StorageEngine;
   public readonly mutationExecutor: MutationExecutor;
+  public readonly peerPool: PeerClientPool;
+  public replicationEngine: ReplicationEngine | null = null;
 
-  constructor(runtime: NodeRuntimeState, storage?: StorageEngine, store?: MemStore) {
+  constructor(
+    runtime: NodeRuntimeState,
+    storage?: StorageEngine,
+    store?: MemStore,
+    replicationMode: ReplicationMode = 'NONE'
+  ) {
     this.runtime = runtime;
     this.store = store ?? new MemStore();
     this.storage =
@@ -46,6 +70,71 @@ export class NodeEngine {
         durabilityMode: 'SYNC_FSYNC'
       });
     this.mutationExecutor = new MutationExecutor(this.storage, this.store, this.runtime);
+    this.peerPool = new PeerClientPool();
+
+    this.initReplicationEngine(replicationMode);
+  }
+
+  public initReplicationEngine(mode: ReplicationMode): void {
+    if (mode === 'NONE') {
+      this.replicationEngine = null;
+      return;
+    }
+
+    const localOps = {
+      put: async (params: any) => {
+        const res = await this.mutationExecutor.execute({
+          recordType: WalRecordType.PUT,
+          key: params.key,
+          value: params.value,
+          clientId: params.clientId,
+          requestId: params.requestId,
+          operationId: params.operationId,
+          runId: params.runId
+        });
+        return {
+          version: res.version,
+          frontier: res.frontier,
+          isDuplicate: res.isDuplicate
+        };
+      },
+      get: (params: any) => ({
+        keyState: this.store.get(params.key),
+        frontier: this.store.getVersions(params.key)
+      }),
+      delete: async (params: any) => {
+        const res = await this.mutationExecutor.execute({
+          recordType: WalRecordType.DELETE,
+          key: params.key,
+          clientId: params.clientId,
+          requestId: params.requestId,
+          operationId: params.operationId,
+          runId: params.runId
+        });
+        return {
+          tombstoneVersion: res.version,
+          frontier: res.frontier,
+          isDuplicate: res.isDuplicate
+        };
+      },
+      isDurable: () => this.storage.durabilityMode === 'SYNC_FSYNC'
+    };
+
+    if (mode === 'SYNC') {
+      this.replicationEngine = new SyncReplicationEngine({
+        localNodeId: this.runtime.nodeId,
+        localOps,
+        peerPool: this.peerPool,
+        getMembership: () => this.runtime.getMembership()
+      });
+    } else {
+      this.replicationEngine = new AsyncReplicationEngine({
+        localNodeId: this.runtime.nodeId,
+        localOps,
+        peerPool: this.peerPool,
+        getMembership: () => this.runtime.getMembership()
+      });
+    }
   }
 
   public async recover(): Promise<void> {
@@ -63,6 +152,17 @@ export class NodeEngine {
     operationId: string;
     requestId: string;
   }): Promise<NodeEnginePutResult> {
+    if (this.replicationEngine) {
+      const repRes = await this.replicationEngine.put(params);
+      return {
+        version: repRes.version,
+        frontier: repRes.frontier,
+        sequence: this.storage.getCurrentSequence(),
+        isDuplicate: Boolean(repRes.isDuplicate),
+        replicationResult: repRes
+      };
+    }
+
     const res = await this.mutationExecutor.execute({
       recordType: WalRecordType.PUT,
       key: params.key,
@@ -97,6 +197,17 @@ export class NodeEngine {
     operationId: string;
     requestId: string;
   }): Promise<NodeEngineDeleteResult> {
+    if (this.replicationEngine) {
+      const repRes = await this.replicationEngine.delete(params);
+      return {
+        tombstoneVersion: repRes.version,
+        frontier: repRes.frontier,
+        sequence: this.storage.getCurrentSequence(),
+        isDuplicate: Boolean(repRes.isDuplicate),
+        replicationResult: repRes
+      };
+    }
+
     const res = await this.mutationExecutor.execute({
       recordType: WalRecordType.DELETE,
       key: params.key,
@@ -111,6 +222,70 @@ export class NodeEngine {
       frontier: res.frontier,
       sequence: res.sequence,
       isDuplicate: res.isDuplicate
+    };
+  }
+
+  /**
+   * Applies an incoming replicated mutation from a peer coordinator (§Q2).
+   */
+  public async applyReplicatedEntry(params: {
+    key: string;
+    entry: VersionedEntry;
+    operationId: string;
+    requestId: string;
+    sourceNode: string;
+    membershipHash: string;
+    fencingEpoch: number;
+  }): Promise<{ status: ProtoStatusCode; durableAcked: boolean; message?: string }> {
+    // 1. Membership hash verification (§Q0, §Q2)
+    const localHash = this.runtime.getMembership().hash;
+    if (params.membershipHash !== localHash) {
+      return {
+        status: ProtoStatusCode.STATUS_CODE_STALE_MEMBERSHIP,
+        durableAcked: false,
+        message: `Stale membership: incoming hash ${params.membershipHash.slice(0, 8)} != local ${localHash.slice(0, 8)}`
+      };
+    }
+
+    // 2. Witness Lamport clock
+    this.runtime.clocks.lamport.witness(BigInt(params.entry.version.lamport));
+
+    // 3. Persist to local WAL
+    const recordType = params.entry.tombstone ? WalRecordType.DELETE : WalRecordType.PUT;
+    const payload = params.entry.tombstone
+      ? serializeDeletePayload({
+          key: params.key,
+          version: params.entry.version,
+          clientId: `replica:${params.sourceNode}`,
+          requestId: params.requestId,
+          operationId: params.operationId
+        })
+      : serializePutPayload({
+          key: params.key,
+          value: params.entry.value ?? new Uint8Array(),
+          tombstone: false,
+          version: params.entry.version,
+          clientId: `replica:${params.sourceNode}`,
+          requestId: params.requestId,
+          operationId: params.operationId
+        });
+
+    const envelope: WalRecordEnvelope = {
+      recordType,
+      sequence: this.storage.getCurrentSequence() + 1n,
+      schemaVersion: 1,
+      payload
+    };
+
+    const isDurable = this.storage.durabilityMode === 'SYNC_FSYNC';
+    await this.storage.log.append(encodeWalEnvelope(envelope), isDurable);
+
+    // 4. Apply to MemStore using §Q2 canonical apply rule
+    this.store.applyEntry(params.key, params.entry);
+
+    return {
+      status: ProtoStatusCode.STATUS_CODE_OK,
+      durableAcked: isDurable
     };
   }
 
@@ -147,6 +322,7 @@ export class NodeEngine {
   }
 
   public async close(): Promise<void> {
+    await this.peerPool.close();
     await this.storage.close();
   }
 }
