@@ -4,6 +4,7 @@ import {
   getNodeServiceDefinition,
   getHealthServiceDefinition
 } from '@quorum-lab/protocol';
+import { StorageEngine } from '@quorum-lab/storage';
 import { DefaultNodeClocks } from './runtime/clocks.js';
 import { NodeLifecycle } from './runtime/lifecycle.js';
 import { DefaultNodeRuntimeState } from './runtime/nodeState.js';
@@ -18,6 +19,7 @@ export class QuorumNodeApp {
   public readonly clocks: DefaultNodeClocks;
   public readonly runtime: DefaultNodeRuntimeState;
   public readonly store: MemStore;
+  public readonly storage: StorageEngine;
   public readonly engine: NodeEngine;
   private readonly server: grpc.Server;
   private boundPort = 0;
@@ -41,7 +43,11 @@ export class QuorumNodeApp {
     });
 
     this.store = new MemStore();
-    this.engine = new NodeEngine(this.runtime, this.store);
+    this.storage = new StorageEngine({
+      dataDir: config.node.dataDir,
+      durabilityMode: 'SYNC_FSYNC'
+    });
+    this.engine = new NodeEngine(this.runtime, this.storage, this.store);
     this.server = new grpc.Server();
 
     this.registerServices();
@@ -59,6 +65,9 @@ export class QuorumNodeApp {
 
   public async start(): Promise<number> {
     this.lifecycle.transitionTo('BOOTSTRAPPING');
+
+    // 1. Recover state from snapshot and WAL
+    await this.engine.recover();
 
     const address = `${this.config.node.grpcHost ?? '0.0.0.0'}:${this.config.node.grpcPort}`;
 
@@ -88,6 +97,8 @@ export class QuorumNodeApp {
     if (this.lifecycle.getState() === 'TERMINATED') return;
 
     this.lifecycle.transitionTo('STOPPING');
+
+    await this.engine.close();
 
     return new Promise<void>((resolve) => {
       this.server.tryShutdown((err) => {

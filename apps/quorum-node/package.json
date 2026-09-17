@@ -19,6 +19,7 @@
     "@quorum-lab/consistency": "workspace:*",
     "@quorum-lab/contracts": "workspace:*",
     "@quorum-lab/protocol": "workspace:*",
+    "@quorum-lab/storage": "workspace:*",
     "dotenv": "^16.4.7"
   },
   "devDependencies": {

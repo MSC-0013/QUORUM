@@ -199,6 +199,9 @@ importers:
       '@quorum-lab/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@quorum-lab/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -261,6 +264,25 @@ importers:
       '@grpc/proto-loader':
         specifier: ^0.7.13
         version: 0.7.15
+      '@quorum-lab/consistency':
+        specifier: workspace:*
+        version: link:../consistency
+      '@quorum-lab/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@24.13.5)
+
+  packages/storage:
+    dependencies:
       '@quorum-lab/consistency':
         specifier: workspace:*
         version: link:../consistency

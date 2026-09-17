@@ -1,6 +1,7 @@
 import * as grpc from '@grpc/grpc-js';
 import { NodeEngine } from '../engine/nodeEngine.js';
 import { ProtoStatusCode } from '@quorum-lab/protocol';
+import { IdempotencyConflictError } from '@quorum-lab/storage';
 
 export class NodeServiceImpl {
   private readonly engine: NodeEngine;
@@ -9,10 +10,10 @@ export class NodeServiceImpl {
     this.engine = engine;
   }
 
-  public put = (
+  public put = async (
     call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
+  ): Promise<void> => {
     try {
       const { key, value, run_id, client_id, operation_id, request_id } = call.request;
 
@@ -30,7 +31,7 @@ export class NodeServiceImpl {
           ? Buffer.from(value)
           : Buffer.from(String(value ?? ''));
 
-      const result = this.engine.put({
+      const result = await this.engine.put({
         key,
         value: valBuffer,
         runId: run_id ?? '',
@@ -42,7 +43,7 @@ export class NodeServiceImpl {
       callback(null, {
         status: {
           code: ProtoStatusCode.STATUS_CODE_OK,
-          message: 'OK'
+          message: result.isDuplicate ? 'DEDUPLICATED' : 'OK'
         },
         version: {
           dot: {
@@ -65,6 +66,18 @@ export class NodeServiceImpl {
         }
       });
     } catch (err: any) {
+      if (err instanceof IdempotencyConflictError) {
+        callback(null, {
+          status: {
+            code: ProtoStatusCode.STATUS_CODE_IDEMPOTENCY_CONFLICT,
+            message: err.message
+          },
+          version: null,
+          resulting_frontier: null
+        });
+        return;
+      }
+
       callback({
         code: grpc.status.INTERNAL,
         message: err?.message ?? 'Internal error during Put'
@@ -123,10 +136,10 @@ export class NodeServiceImpl {
     }
   };
 
-  public delete = (
+  public delete = async (
     call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
+  ): Promise<void> => {
     try {
       const { key, run_id, client_id, operation_id, request_id } = call.request;
       if (!key || typeof key !== 'string') {
@@ -137,7 +150,7 @@ export class NodeServiceImpl {
         return;
       }
 
-      const result = this.engine.delete({
+      const result = await this.engine.delete({
         key,
         runId: run_id ?? '',
         clientId: client_id ?? '',
@@ -148,7 +161,7 @@ export class NodeServiceImpl {
       callback(null, {
         status: {
           code: ProtoStatusCode.STATUS_CODE_OK,
-          message: 'OK'
+          message: result.isDuplicate ? 'DEDUPLICATED' : 'OK'
         },
         tombstone_version: {
           dot: {
@@ -171,6 +184,18 @@ export class NodeServiceImpl {
         }
       });
     } catch (err: any) {
+      if (err instanceof IdempotencyConflictError) {
+        callback(null, {
+          status: {
+            code: ProtoStatusCode.STATUS_CODE_IDEMPOTENCY_CONFLICT,
+            message: err.message
+          },
+          tombstone_version: null,
+          resulting_frontier: null
+        });
+        return;
+      }
+
       callback({
         code: grpc.status.INTERNAL,
         message: err?.message ?? 'Internal error during Delete'
@@ -237,24 +262,38 @@ export class NodeServiceImpl {
     }
   };
 
-  // The following RPCs are deliberately UNIMPLEMENTED in Q0 per §Q0 / §14
-  public createSnapshot = (
-    _call: grpc.ServerUnaryCall<any, any>,
+  // Q1 Storage Milestone Implementation of CreateSnapshot
+  public createSnapshot = async (
+    call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
-    callback({
-      code: grpc.status.UNIMPLEMENTED,
-      message: 'CreateSnapshot is not implemented in Milestone Q0 (scheduled for Q1)'
-    });
+  ): Promise<void> => {
+    try {
+      const { destination_path } = call.request;
+      const res = await this.engine.createSnapshot(destination_path);
+      callback(null, {
+        status: {
+          code: ProtoStatusCode.STATUS_CODE_OK,
+          message: 'Snapshot created successfully'
+        },
+        snapshot_sequence: res.snapshotSequence,
+        snapshot_path: res.snapshotPath
+      });
+    } catch (err: any) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: err?.message ?? 'Failed to create snapshot'
+      });
+    }
   };
 
+  // The following RPCs remain UNIMPLEMENTED for future milestones
   public replicate = (
     _call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
   ): void => {
     callback({
       code: grpc.status.UNIMPLEMENTED,
-      message: 'Replicate is not implemented in Milestone Q0 (scheduled for Q2)'
+      message: 'Replicate is not implemented in Milestone Q1 (scheduled for Q2)'
     });
   };
 
@@ -264,7 +303,7 @@ export class NodeServiceImpl {
   ): void => {
     callback({
       code: grpc.status.UNIMPLEMENTED,
-      message: 'ReadDigest is not implemented in Milestone Q0 (scheduled for Q6)'
+      message: 'ReadDigest is not implemented in Milestone Q1 (scheduled for Q6)'
     });
   };
 
@@ -274,7 +313,7 @@ export class NodeServiceImpl {
   ): void => {
     callback({
       code: grpc.status.UNIMPLEMENTED,
-      message: 'Repair is not implemented in Milestone Q0 (scheduled for Q6)'
+      message: 'Repair is not implemented in Milestone Q1 (scheduled for Q6)'
     });
   };
 
@@ -284,7 +323,7 @@ export class NodeServiceImpl {
   ): void => {
     callback({
       code: grpc.status.UNIMPLEMENTED,
-      message: 'PrepareWrite is not implemented in Milestone Q0 (scheduled for Q8)'
+      message: 'PrepareWrite is not implemented in Milestone Q1 (scheduled for Q8)'
     });
   };
 
@@ -294,7 +333,7 @@ export class NodeServiceImpl {
   ): void => {
     callback({
       code: grpc.status.UNIMPLEMENTED,
-      message: 'CommitWrite is not implemented in Milestone Q0 (scheduled for Q8)'
+      message: 'CommitWrite is not implemented in Milestone Q1 (scheduled for Q8)'
     });
   };
 

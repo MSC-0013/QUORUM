@@ -3,17 +3,26 @@ import {
   VersionFrontier,
   VersionStamp
 } from '@quorum-lab/consistency';
+import {
+  StorageEngine,
+  WalRecordType
+} from '@quorum-lab/storage';
 import { MemStore } from './memStore.js';
 import { NodeRuntimeState } from '../runtime/nodeState.js';
+import { MutationExecutor } from './mutationExecutor.js';
 
 export interface NodeEnginePutResult {
   version: VersionStamp;
   frontier: VersionFrontier;
+  sequence: bigint;
+  isDuplicate: boolean;
 }
 
 export interface NodeEngineDeleteResult {
   tombstoneVersion: VersionStamp;
   frontier: VersionFrontier;
+  sequence: bigint;
+  isDuplicate: boolean;
 }
 
 export interface NodeEngineGetResult {
@@ -24,27 +33,51 @@ export interface NodeEngineGetResult {
 export class NodeEngine {
   public readonly store: MemStore;
   public readonly runtime: NodeRuntimeState;
+  public readonly storage: StorageEngine;
+  public readonly mutationExecutor: MutationExecutor;
 
-  constructor(runtime: NodeRuntimeState, store?: MemStore) {
+  constructor(runtime: NodeRuntimeState, storage?: StorageEngine, store?: MemStore) {
     this.runtime = runtime;
     this.store = store ?? new MemStore();
+    this.storage =
+      storage ??
+      new StorageEngine({
+        dataDir: `./data/${runtime.nodeId}`,
+        durabilityMode: 'SYNC_FSYNC'
+      });
+    this.mutationExecutor = new MutationExecutor(this.storage, this.store, this.runtime);
   }
 
-  public put(params: {
+  public async recover(): Promise<void> {
+    const report = await this.storage.recover(this.store);
+    console.log(
+      `[NODE ${this.runtime.nodeId}] Recovery complete: snapshot=${report.snapshotLoaded}, replayed=${report.recordsReplayed}, lastSeq=${report.lastSequence}`
+    );
+  }
+
+  public async put(params: {
     key: string;
     value: Uint8Array;
     runId: string;
     clientId: string;
     operationId: string;
     requestId: string;
-  }): NodeEnginePutResult {
-    // Generate new VersionStamp using node's clocks
-    const version = this.runtime.clocks.mintVersionStamp();
-    const { frontier } = this.store.put(params.key, params.value, version);
+  }): Promise<NodeEnginePutResult> {
+    const res = await this.mutationExecutor.execute({
+      recordType: WalRecordType.PUT,
+      key: params.key,
+      value: params.value,
+      clientId: params.clientId,
+      requestId: params.requestId,
+      operationId: params.operationId,
+      runId: params.runId
+    });
 
     return {
-      version,
-      frontier
+      version: res.version,
+      frontier: res.frontier,
+      sequence: res.sequence,
+      isDuplicate: res.isDuplicate
     };
   }
 
@@ -57,20 +90,34 @@ export class NodeEngine {
     };
   }
 
-  public delete(params: {
+  public async delete(params: {
     key: string;
     runId: string;
     clientId: string;
     operationId: string;
     requestId: string;
-  }): NodeEngineDeleteResult {
-    const tombstoneVersion = this.runtime.clocks.mintVersionStamp();
-    const { frontier } = this.store.delete(params.key, tombstoneVersion);
+  }): Promise<NodeEngineDeleteResult> {
+    const res = await this.mutationExecutor.execute({
+      recordType: WalRecordType.DELETE,
+      key: params.key,
+      clientId: params.clientId,
+      requestId: params.requestId,
+      operationId: params.operationId,
+      runId: params.runId
+    });
 
     return {
-      tombstoneVersion,
-      frontier
+      tombstoneVersion: res.version,
+      frontier: res.frontier,
+      sequence: res.sequence,
+      isDuplicate: res.isDuplicate
     };
+  }
+
+  public async createSnapshot(
+    destinationPath?: string
+  ): Promise<{ snapshotPath: string; snapshotSequence: bigint }> {
+    return this.storage.createSnapshot(this.store, destinationPath);
   }
 
   public getVersions(key: string): VersionFrontier {
@@ -85,6 +132,7 @@ export class NodeEngine {
     keyCount: number;
     lamport: number;
     wallTimeMs: number;
+    walSequence: bigint;
   } {
     return {
       nodeId: this.runtime.nodeId,
@@ -93,7 +141,12 @@ export class NodeEngine {
       membership: this.runtime.getMembership(),
       keyCount: this.store.size(),
       lamport: Number(this.runtime.clocks.lamport.now()),
-      wallTimeMs: this.runtime.clocks.wall.nowMs()
+      wallTimeMs: this.runtime.clocks.wall.nowMs(),
+      walSequence: this.storage.getCurrentSequence()
     };
+  }
+
+  public async close(): Promise<void> {
+    await this.storage.close();
   }
 }

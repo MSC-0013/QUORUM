@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
 import path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { QuorumNodeApp } from '../../src/app.js';
 import { PROTO_DIR } from '@quorum-lab/protocol';
+
+const TEST_DIR = path.resolve('./tests/tmp-grpc-node-service');
 
 describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
   let app: QuorumNodeApp;
@@ -12,11 +15,16 @@ describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
   let healthClient: any;
 
   beforeAll(async () => {
+    if (fs.existsSync(TEST_DIR)) {
+      await fs.promises.rm(TEST_DIR, { recursive: true, force: true });
+    }
+    await fs.promises.mkdir(TEST_DIR, { recursive: true });
+
     app = new QuorumNodeApp({
       node: {
         id: 'node-a',
         clusterId: 'cluster-test',
-        dataDir: './data/node-a',
+        dataDir: TEST_DIR,
         grpcPort: 0, // OS assigns an ephemeral free port
         grpcHost: '127.0.0.1'
       },
@@ -58,6 +66,9 @@ describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
     if (nodeClient) nodeClient.close();
     if (healthClient) healthClient.close();
     await app.stop();
+    if (fs.existsSync(TEST_DIR)) {
+      await fs.promises.rm(TEST_DIR, { recursive: true, force: true });
+    }
   });
 
   it('verifies node lifecycle reached HEALTHY and health check returns SERVING', async () => {
@@ -194,7 +205,16 @@ describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
       });
     };
 
-    await testUnimplemented((cb) => nodeClient.CreateSnapshot({}, cb));
+    // CreateSnapshot is implemented in Q1
+    const snapResult: any = await new Promise((resolve, reject) => {
+      nodeClient.CreateSnapshot({}, (err: any, resp: any) => {
+        if (err) reject(err);
+        else resolve(resp);
+      });
+    });
+    expect(snapResult.status.code).toBe('STATUS_CODE_OK');
+
+    // Remaining future milestone RPCs
     await testUnimplemented((cb) => nodeClient.Replicate({}, cb));
     await testUnimplemented((cb) => nodeClient.ReadDigest({}, cb));
     await testUnimplemented((cb) => nodeClient.Repair({}, cb));
