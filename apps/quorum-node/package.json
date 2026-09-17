@@ -2,8 +2,14 @@
   "name": "@quorum-lab/quorum-node",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/main.js",
-  "types": "./dist/main.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
@@ -18,6 +24,7 @@
     "@quorum-lab/clocks": "workspace:*",
     "@quorum-lab/consistency": "workspace:*",
     "@quorum-lab/contracts": "workspace:*",
+    "@quorum-lab/fault-model": "workspace:*",
     "@quorum-lab/protocol": "workspace:*",
     "@quorum-lab/replication": "workspace:*",
     "@quorum-lab/storage": "workspace:*",

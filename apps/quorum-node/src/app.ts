@@ -2,9 +2,11 @@ import * as grpc from '@grpc/grpc-js';
 import { AppConfig, createMembershipSnapshot } from '@quorum-lab/contracts';
 import {
   getNodeServiceDefinition,
-  getHealthServiceDefinition
+  getHealthServiceDefinition,
+  getFaultControlServiceDefinition
 } from '@quorum-lab/protocol';
 import { StorageEngine } from '@quorum-lab/storage';
+import { FaultRegistry } from '@quorum-lab/fault-model';
 import { DefaultNodeClocks } from './runtime/clocks.js';
 import { NodeLifecycle } from './runtime/lifecycle.js';
 import { DefaultNodeRuntimeState } from './runtime/nodeState.js';
@@ -12,6 +14,7 @@ import { MemStore } from './engine/memStore.js';
 import { NodeEngine } from './engine/nodeEngine.js';
 import { NodeServiceImpl } from './service/nodeServiceImpl.js';
 import { HealthServiceImpl } from './service/healthServiceImpl.js';
+import { FaultControlServiceImpl } from './service/faultControlServiceImpl.js';
 
 import { LocalDurabilityMode } from '@quorum-lab/storage';
 import { ReplicationMode } from './engine/nodeEngine.js';
@@ -31,6 +34,7 @@ export class QuorumNodeApp {
   public readonly store: MemStore;
   public readonly storage: StorageEngine;
   public readonly engine: NodeEngine;
+  public readonly faultRegistry: FaultRegistry;
   private readonly server: grpc.Server;
   private boundPort = 0;
 
@@ -38,6 +42,7 @@ export class QuorumNodeApp {
     this.config = config;
     this.lifecycle = new NodeLifecycle();
     this.clocks = new DefaultNodeClocks(config.node.id);
+    this.faultRegistry = new FaultRegistry();
 
     const membership = createMembershipSnapshot(
       config.cluster.membershipVersion,
@@ -64,6 +69,22 @@ export class QuorumNodeApp {
       options?.replicationMode ?? 'NONE',
       options?.quorumConfig
     );
+
+    // Wire network fault interceptor into peer client pool
+    this.engine.peerPool.setFaultInterceptor((ctx) => {
+      const decision = this.faultRegistry.evaluate({
+        scope: 'NODE_TO_NODE',
+        localNodeId: ctx.sourceNodeId,
+        peerNodeId: ctx.peerNodeId
+      });
+      return {
+        allow: decision.allow,
+        delayMs: decision.delayMs,
+        drop: decision.drop,
+        error: decision.injectError
+      };
+    });
+
     this.server = new grpc.Server();
 
     this.registerServices();
@@ -77,6 +98,15 @@ export class QuorumNodeApp {
     const healthServiceDef = getHealthServiceDefinition();
     const healthServiceImpl = new HealthServiceImpl(this.lifecycle);
     this.server.addService(healthServiceDef, healthServiceImpl.getServiceImplementation());
+
+    const faultServiceDef = getFaultControlServiceDefinition();
+    const faultServiceImpl = new FaultControlServiceImpl(
+      this.config.node.id,
+      this.faultRegistry,
+      this.lifecycle,
+      this.clocks
+    );
+    this.server.addService(faultServiceDef, faultServiceImpl.getServiceImplementation());
   }
 
   public async start(): Promise<number> {

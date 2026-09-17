@@ -210,6 +210,46 @@ importers:
         specifier: ^3.0.7
         version: 3.2.7(@types/node@24.13.5)
 
+  apps/experiment-worker:
+    dependencies:
+      '@grpc/grpc-js':
+        specifier: ^1.13.0
+        version: 1.14.4
+      '@grpc/proto-loader':
+        specifier: ^0.7.13
+        version: 0.7.15
+      '@quorum-lab/clocks':
+        specifier: workspace:*
+        version: link:../../packages/clocks
+      '@quorum-lab/consistency':
+        specifier: workspace:*
+        version: link:../../packages/consistency
+      '@quorum-lab/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@quorum-lab/fault-model':
+        specifier: workspace:*
+        version: link:../../packages/fault-model
+      '@quorum-lab/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@quorum-lab/replication':
+        specifier: workspace:*
+        version: link:../../packages/replication
+    devDependencies:
+      '@quorum-lab/quorum-node':
+        specifier: workspace:*
+        version: link:../quorum-node
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@24.13.5)
+
   apps/quorum-node:
     dependencies:
       '@grpc/grpc-js':
@@ -227,6 +267,9 @@ importers:
       '@quorum-lab/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@quorum-lab/fault-model':
+        specifier: workspace:*
+        version: link:../../packages/fault-model
       '@quorum-lab/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -279,6 +322,28 @@ importers:
         version: 3.2.7(@types/node@24.13.5)
 
   packages/contracts:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@24.13.5)
+
+  packages/fault-model:
+    dependencies:
+      '@quorum-lab/clocks':
+        specifier: workspace:*
+        version: link:../clocks
+      '@quorum-lab/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@quorum-lab/protocol':
+        specifier: workspace:*
+        version: link:../protocol
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

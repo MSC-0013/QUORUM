@@ -68,3 +68,27 @@ export function getHealthServiceDefinition(): grpc.ServiceDefinition {
   };
   return loaded.grpc.health.v1.Health.service;
 }
+
+export function getFaultControlServiceDefinition(): grpc.ServiceDefinition {
+  const protoPath = path.join(PROTO_DIR, 'fault.proto');
+  const packageDefinition = protoLoader.loadSync(protoPath, {
+    keepCase: true,
+    longs: String,
+    enums: String,
+    defaults: true,
+    oneofs: true,
+    includeDirs: [PROTO_DIR]
+  });
+  const loaded = grpc.loadPackageDefinition(packageDefinition) as unknown as {
+    quorum: {
+      fault: {
+        v1: {
+          FaultControlService: {
+            service: grpc.ServiceDefinition;
+          };
+        };
+      };
+    };
+  };
+  return loaded.quorum.fault.v1.FaultControlService.service;
+}

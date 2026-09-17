@@ -11,9 +11,17 @@ export interface PeerEndpoint {
   readonly address: string; // e.g. "127.0.0.1:50052"
 }
 
+export type NetworkFaultInterceptor = (params: {
+  sourceNodeId: string;
+  peerNodeId: string;
+}) =>
+  | Promise<{ allow: boolean; delayMs?: number; drop?: boolean; error?: string }>
+  | { allow: boolean; delayMs?: number; drop?: boolean; error?: string };
+
 export class PeerClientPool {
   private readonly clients = new Map<string, any>();
   private readonly NodeServiceConstructor: any;
+  private faultInterceptor?: NetworkFaultInterceptor;
 
   constructor() {
     const nodePackageDef = protoLoader.loadSync(path.join(PROTO_DIR, 'node.proto'), {
@@ -26,6 +34,10 @@ export class PeerClientPool {
     });
     const loaded = grpc.loadPackageDefinition(nodePackageDef) as any;
     this.NodeServiceConstructor = loaded.quorum.node.v1.NodeService;
+  }
+
+  public setFaultInterceptor(interceptor?: NetworkFaultInterceptor): void {
+    this.faultInterceptor = interceptor;
   }
 
   public registerPeer(endpoint: PeerEndpoint): void {
@@ -62,6 +74,27 @@ export class PeerClientPool {
         latencyMs: 0,
         error: `Peer ${params.peerNodeId} not registered in peer client pool`
       };
+    }
+
+    if (this.faultInterceptor) {
+      const fault = await this.faultInterceptor({
+        sourceNodeId: params.sourceNodeId,
+        peerNodeId: params.peerNodeId
+      });
+
+      if (!fault.allow || fault.drop) {
+        return {
+          nodeId: params.peerNodeId,
+          replicaAcked: false,
+          durableAcked: false,
+          latencyMs: 0,
+          error: fault.error ?? 'Replication dropped by fault injector'
+        };
+      }
+
+      if (fault.delayMs && fault.delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, fault.delayMs));
+      }
     }
 
     const start = process.hrtime.bigint();

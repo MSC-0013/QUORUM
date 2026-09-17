@@ -1,0 +1,29 @@
+{
+  "name": "@quorum-lab/experiment-worker",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.13.0",
+    "@grpc/proto-loader": "^0.7.13",
+    "@quorum-lab/clocks": "workspace:*",
+    "@quorum-lab/consistency": "workspace:*",
+    "@quorum-lab/contracts": "workspace:*",
+    "@quorum-lab/fault-model": "workspace:*",
+    "@quorum-lab/protocol": "workspace:*",
+    "@quorum-lab/replication": "workspace:*"
+  },
+  "devDependencies": {
+    "@quorum-lab/quorum-node": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}
