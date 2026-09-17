@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package quorum.node.v1;
+
+import "common.proto";
+
+service NodeService {
+  // Q0 Core In-Memory RPCs
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc GetVersions(GetVersionsRequest) returns (quorum.common.v1.VersionFrontier);
+  rpc GetNodeState(GetNodeStateRequest) returns (NodeStateResponse);
+
+  // Q1 Storage Milestone (UNIMPLEMENTED at Q0)
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
+
+  // Q2 Replication Milestone (UNIMPLEMENTED at Q0)
+  rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+
+  // Q6 Anti-Entropy & Repair (UNIMPLEMENTED at Q0)
+  rpc ReadDigest(ReadDigestRequest) returns (ReadDigestResponse);
+  rpc Repair(RepairRequest) returns (RepairResponse);
+
+  // Q8 Leader & Fencing Milestone (UNIMPLEMENTED at Q0)
+  rpc PrepareWrite(PrepareWriteRequest) returns (PrepareWriteResponse);
+  rpc CommitWrite(CommitWriteRequest) returns (CommitWriteResponse);
+}
+
+message PutRequest {
+  string key = 1;
+  bytes value = 2;
+  string run_id = 3;
+  string client_id = 4;
+  string operation_id = 5;
+  string request_id = 6;
+  uint64 fencing_epoch = 7;
+}
+
+message PutResponse {
+  quorum.common.v1.Status status = 1;
+  quorum.common.v1.VersionStamp version = 2;
+  quorum.common.v1.VersionFrontier resulting_frontier = 3;
+}
+
+message GetRequest {
+  string key = 1;
+  string run_id = 2;
+  string client_id = 3;
+  string operation_id = 4;
+  string request_id = 5;
+  string read_consistency = 6;
+}
+
+message GetResponse {
+  quorum.common.v1.Status status = 1;
+  quorum.common.v1.KeyState key_state = 2;
+  quorum.common.v1.VersionFrontier frontier = 3;
+}
+
+message DeleteRequest {
+  string key = 1;
+  string run_id = 2;
+  string client_id = 3;
+  string operation_id = 4;
+  string request_id = 5;
+  uint64 fencing_epoch = 6;
+}
+
+message DeleteResponse {
+  quorum.common.v1.Status status = 1;
+  quorum.common.v1.VersionStamp tombstone_version = 2;
+  quorum.common.v1.VersionFrontier resulting_frontier = 3;
+}
+
+message GetVersionsRequest {
+  string key = 1;
+}
+
+message GetNodeStateRequest {
+  bool include_keys = 1;
+}
+
+message NodeStateResponse {
+  string node_id = 1;
+  string cluster_id = 2;
+  string lifecycle_state = 3;
+  quorum.common.v1.MembershipSnapshot membership = 4;
+  uint64 key_count = 5;
+  uint64 lamport = 6;
+  int64 wall_time_ms = 7;
+}
+
+message CreateSnapshotRequest {
+  string destination_path = 1;
+}
+
+message CreateSnapshotResponse {
+  quorum.common.v1.Status status = 1;
+  uint64 snapshot_sequence = 2;
+  string snapshot_path = 3;
+}
+
+message ReplicateRequest {
+  string operation_id = 1;
+  string request_id = 2;
+  string source_node = 3;
+  quorum.common.v1.VersionedEntry entry = 4;
+  string key = 5;
+  uint64 fencing_epoch = 6;
+  uint64 membership_version = 7;
+  string membership_hash = 8;
+}
+
+message ReplicateResponse {
+  quorum.common.v1.Status status = 1;
+  bool durable_acked = 2;
+}
+
+message ReadDigestRequest {
+  uint32 bucket_id = 1;
+}
+
+message ReadDigestResponse {
+  uint32 bucket_id = 1;
+  string merkle_root_hash = 2;
+}
+
+message RepairRequest {
+  string key = 1;
+  quorum.common.v1.VersionedEntry entry = 2;
+}
+
+message RepairResponse {
+  quorum.common.v1.Status status = 1;
+}
+
+message PrepareWriteRequest {
+  string key = 1;
+  bytes value = 2;
+  uint64 epoch = 3;
+  string leader_id = 4;
+}
+
+message PrepareWriteResponse {
+  quorum.common.v1.Status status = 1;
+}
+
+message CommitWriteRequest {
+  string key = 1;
+  uint64 epoch = 2;
+  string leader_id = 3;
+}
+
+message CommitWriteResponse {
+  quorum.common.v1.Status status = 1;
+}

@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package quorum.fault.v1;
+
+import "common.proto";
+
+service FaultControlService {
+  rpc SetFault(SetFaultRequest) returns (SetFaultResponse);
+  rpc ClearFault(ClearFaultRequest) returns (ClearFaultResponse);
+  rpc ClearAllFaults(ClearAllFaultsRequest) returns (ClearAllFaultsResponse);
+  rpc Crash(CrashRequest) returns (CrashResponse);
+}
+
+enum FaultType {
+  FAULT_TYPE_UNSPECIFIED = 0;
+  FAULT_TYPE_DELAY = 1;
+  FAULT_TYPE_LOSS = 2;
+  FAULT_TYPE_DUPLICATION = 3;
+  FAULT_TYPE_REORDER = 4;
+  FAULT_TYPE_PARTITION = 5;
+  FAULT_TYPE_CLOCK_SKEW = 6;
+  FAULT_TYPE_SLOW_DISK = 7;
+  FAULT_TYPE_WRITE_FAILURE = 8;
+  FAULT_TYPE_READ_FAILURE = 9;
+}
+
+enum FaultScope {
+  FAULT_SCOPE_UNSPECIFIED = 0;
+  FAULT_SCOPE_NODE_TO_NODE = 1;
+  FAULT_SCOPE_CLIENT_TO_NODE = 2;
+  FAULT_SCOPE_PROCESS = 3;
+  FAULT_SCOPE_STORAGE = 4;
+  FAULT_SCOPE_CLOCK = 5;
+}
+
+message FaultRule {
+  string fault_id = 1;
+  FaultType fault_type = 2;
+  FaultScope scope = 3;
+  string target_node_id = 4;
+  string peer_node_id = 5;
+  uint64 delay_ms = 6;
+  double probability = 7;
+  int64 clock_skew_ms = 8;
+  uint64 duration_ms = 9;
+}
+
+message SetFaultRequest {
+  FaultRule rule = 1;
+}
+
+message SetFaultResponse {
+  quorum.common.v1.Status status = 1;
+  string fault_id = 2;
+}
+
+message ClearFaultRequest {
+  string fault_id = 1;
+}
+
+message ClearFaultResponse {
+  quorum.common.v1.Status status = 1;
+}
+
+message ClearAllFaultsRequest {}
+
+message ClearAllFaultsResponse {
+  quorum.common.v1.Status status = 1;
+  uint32 cleared_count = 2;
+}
+
+message CrashRequest {
+  string mode = 1; // "HARD", "SOFT", "RESTART"
+  uint64 restart_delay_ms = 2;
+}
+
+message CrashResponse {
+  quorum.common.v1.Status status = 1;
+}

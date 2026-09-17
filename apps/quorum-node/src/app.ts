@@ -1,0 +1,106 @@
+import * as grpc from '@grpc/grpc-js';
+import { AppConfig, createMembershipSnapshot } from '@quorum-lab/contracts';
+import {
+  getNodeServiceDefinition,
+  getHealthServiceDefinition
+} from '@quorum-lab/protocol';
+import { DefaultNodeClocks } from './runtime/clocks.js';
+import { NodeLifecycle } from './runtime/lifecycle.js';
+import { DefaultNodeRuntimeState } from './runtime/nodeState.js';
+import { MemStore } from './engine/memStore.js';
+import { NodeEngine } from './engine/nodeEngine.js';
+import { NodeServiceImpl } from './service/nodeServiceImpl.js';
+import { HealthServiceImpl } from './service/healthServiceImpl.js';
+
+export class QuorumNodeApp {
+  public readonly config: AppConfig;
+  public readonly lifecycle: NodeLifecycle;
+  public readonly clocks: DefaultNodeClocks;
+  public readonly runtime: DefaultNodeRuntimeState;
+  public readonly store: MemStore;
+  public readonly engine: NodeEngine;
+  private readonly server: grpc.Server;
+  private boundPort = 0;
+
+  constructor(config: AppConfig) {
+    this.config = config;
+    this.lifecycle = new NodeLifecycle();
+    this.clocks = new DefaultNodeClocks(config.node.id);
+
+    const membership = createMembershipSnapshot(
+      config.cluster.membershipVersion,
+      config.cluster.members
+    );
+
+    this.runtime = new DefaultNodeRuntimeState({
+      nodeId: config.node.id,
+      clusterId: config.node.clusterId,
+      membership,
+      clocks: this.clocks,
+      lifecycle: this.lifecycle
+    });
+
+    this.store = new MemStore();
+    this.engine = new NodeEngine(this.runtime, this.store);
+    this.server = new grpc.Server();
+
+    this.registerServices();
+  }
+
+  private registerServices(): void {
+    const nodeServiceDef = getNodeServiceDefinition();
+    const nodeServiceImpl = new NodeServiceImpl(this.engine);
+    this.server.addService(nodeServiceDef, nodeServiceImpl.getServiceImplementation());
+
+    const healthServiceDef = getHealthServiceDefinition();
+    const healthServiceImpl = new HealthServiceImpl(this.lifecycle);
+    this.server.addService(healthServiceDef, healthServiceImpl.getServiceImplementation());
+  }
+
+  public async start(): Promise<number> {
+    this.lifecycle.transitionTo('BOOTSTRAPPING');
+
+    const address = `${this.config.node.grpcHost ?? '0.0.0.0'}:${this.config.node.grpcPort}`;
+
+    return new Promise<number>((resolve, reject) => {
+      this.server.bindAsync(
+        address,
+        grpc.ServerCredentials.createInsecure(),
+        (error, port) => {
+          if (error) {
+            this.lifecycle.transitionTo('DEGRADED');
+            reject(error);
+            return;
+          }
+
+          this.boundPort = port;
+
+          this.lifecycle.transitionTo('READY');
+          this.lifecycle.transitionTo('HEALTHY');
+
+          resolve(port);
+        }
+      );
+    });
+  }
+
+  public async stop(): Promise<void> {
+    if (this.lifecycle.getState() === 'TERMINATED') return;
+
+    this.lifecycle.transitionTo('STOPPING');
+
+    return new Promise<void>((resolve) => {
+      this.server.tryShutdown((err) => {
+        if (err) {
+          this.server.forceShutdown();
+        }
+        this.lifecycle.transitionTo('TERMINATED');
+        resolve();
+      });
+    });
+  }
+
+  public getBoundPort(): number {
+    return this.boundPort;
+  }
+}

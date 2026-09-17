@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package quorum.common.v1;
+
+message Dot {
+  string node_id = 1;
+  uint64 counter = 2;
+}
+
+message VectorClock {
+  map<string, uint64> entries = 1;
+}
+
+message VersionStamp {
+  Dot dot = 1;
+  VectorClock vector_clock = 2;
+  uint64 lamport = 3;
+  int64 wall_time_ms = 4;
+}
+
+message VersionedEntry {
+  bytes value = 1;
+  bool tombstone = 2;
+  VersionStamp version = 3;
+}
+
+message VersionFrontier {
+  repeated VersionStamp maximal_versions = 1;
+}
+
+message KeyState {
+  string key = 1;
+  repeated VersionedEntry entries = 2;
+}
+
+message MembershipSnapshot {
+  uint64 version = 1;
+  repeated string members = 2;
+  string hash = 3;
+}
+
+enum StatusCode {
+  STATUS_CODE_UNSPECIFIED = 0;
+  STATUS_CODE_OK = 1;
+  STATUS_CODE_NOT_FOUND = 2;
+  STATUS_CODE_IDEMPOTENCY_CONFLICT = 3;
+  STATUS_CODE_VERSION_CONFLICT = 4;
+  STATUS_CODE_STALE_MEMBERSHIP = 5;
+  STATUS_CODE_UNSAFE_LEADER = 6;
+  STATUS_CODE_FENCED = 7;
+  STATUS_CODE_STORAGE_CORRUPTED = 8;
+  STATUS_CODE_UNIMPLEMENTED = 9;
+  STATUS_CODE_INTERNAL_ERROR = 10;
+}
+
+message Status {
+  StatusCode code = 1;
+  string message = 2;
+  map<string, string> metadata = 3;
+}
