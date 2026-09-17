@@ -1,0 +1,28 @@
+{
+  "name": "@quorum-lab/control-api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "start": "node dist/main.js",
+    "dev": "node --watch src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "@quorum-lab/consistency": "workspace:*",
+    "@quorum-lab/contracts": "workspace:*",
+    "@quorum-lab/protocol": "workspace:*",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

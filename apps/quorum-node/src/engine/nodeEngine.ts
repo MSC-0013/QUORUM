@@ -17,6 +17,8 @@ import {
   ReplicationEngine,
   SyncReplicationEngine,
   AsyncReplicationEngine,
+  QuorumReplicationEngine,
+  QuorumConfig,
   PeerClientPool,
   ReplicationResult
 } from '@quorum-lab/replication';
@@ -45,7 +47,7 @@ export interface NodeEngineGetResult {
   frontier: VersionFrontier;
 }
 
-export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC';
+export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC' | 'QUORUM';
 
 export class NodeEngine {
   public readonly store: MemStore;
@@ -59,7 +61,8 @@ export class NodeEngine {
     runtime: NodeRuntimeState,
     storage?: StorageEngine,
     store?: MemStore,
-    replicationMode: ReplicationMode = 'NONE'
+    replicationMode: ReplicationMode = 'NONE',
+    quorumConfig?: QuorumConfig
   ) {
     this.runtime = runtime;
     this.store = store ?? new MemStore();
@@ -72,10 +75,13 @@ export class NodeEngine {
     this.mutationExecutor = new MutationExecutor(this.storage, this.store, this.runtime);
     this.peerPool = new PeerClientPool();
 
-    this.initReplicationEngine(replicationMode);
+    this.initReplicationEngine(replicationMode, quorumConfig);
   }
 
-  public initReplicationEngine(mode: ReplicationMode): void {
+  public initReplicationEngine(
+    mode: ReplicationMode,
+    quorumConfig?: QuorumConfig
+  ): void {
     if (mode === 'NONE') {
       this.replicationEngine = null;
       return;
@@ -127,12 +133,20 @@ export class NodeEngine {
         peerPool: this.peerPool,
         getMembership: () => this.runtime.getMembership()
       });
-    } else {
+    } else if (mode === 'ASYNC') {
       this.replicationEngine = new AsyncReplicationEngine({
         localNodeId: this.runtime.nodeId,
         localOps,
         peerPool: this.peerPool,
         getMembership: () => this.runtime.getMembership()
+      });
+    } else if (mode === 'QUORUM') {
+      this.replicationEngine = new QuorumReplicationEngine({
+        localNodeId: this.runtime.nodeId,
+        localOps,
+        peerPool: this.peerPool,
+        getMembership: () => this.runtime.getMembership(),
+        quorumConfig: quorumConfig ?? { W: 2, R: 2 }
       });
     }
   }
@@ -188,6 +202,17 @@ export class NodeEngine {
       keyState,
       frontier
     };
+  }
+
+  public async distributedGet(params: { key: string }): Promise<NodeEngineGetResult> {
+    if (this.replicationEngine) {
+      const repRes = await this.replicationEngine.get(params);
+      return {
+        keyState: repRes.keyState,
+        frontier: repRes.frontier
+      };
+    }
+    return this.get(params);
   }
 
   public async delete(params: {

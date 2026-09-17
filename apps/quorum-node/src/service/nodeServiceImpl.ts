@@ -86,12 +86,12 @@ export class NodeServiceImpl {
     }
   };
 
-  public get = (
+  public get = async (
     call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
+  ): Promise<void> => {
     try {
-      const { key } = call.request;
+      const key = call.request?.key;
       if (!key || typeof key !== 'string') {
         callback({
           code: grpc.status.INVALID_ARGUMENT,
@@ -100,7 +100,11 @@ export class NodeServiceImpl {
         return;
       }
 
-      const result = this.engine.get({ key });
+      const isInternalPeerRead =
+        call.metadata && call.metadata.get('x-internal-quorum-read').length > 0;
+      const result = isInternalPeerRead
+        ? this.engine.get({ key })
+        : await this.engine.distributedGet({ key });
 
       callback(null, {
         status: {

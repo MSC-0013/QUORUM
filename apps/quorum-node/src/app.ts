@@ -15,10 +15,12 @@ import { HealthServiceImpl } from './service/healthServiceImpl.js';
 
 import { LocalDurabilityMode } from '@quorum-lab/storage';
 import { ReplicationMode } from './engine/nodeEngine.js';
+import { QuorumConfig } from '@quorum-lab/replication';
 
 export interface QuorumNodeAppOptions {
   durabilityMode?: LocalDurabilityMode;
   replicationMode?: ReplicationMode;
+  quorumConfig?: QuorumConfig;
 }
 
 export class QuorumNodeApp {
@@ -59,7 +61,8 @@ export class QuorumNodeApp {
       this.runtime,
       this.storage,
       this.store,
-      options?.replicationMode ?? 'NONE'
+      options?.replicationMode ?? 'NONE',
+      options?.quorumConfig
     );
     this.server = new grpc.Server();
 
