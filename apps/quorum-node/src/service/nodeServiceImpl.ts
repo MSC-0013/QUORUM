@@ -2,7 +2,7 @@ import * as grpc from '@grpc/grpc-js';
 import { NodeEngine } from '../engine/nodeEngine.js';
 import { ProtoStatusCode } from '@quorum-lab/protocol';
 import { IdempotencyConflictError } from '@quorum-lab/storage';
-import { VersionedEntry, CausalSessionTracker } from '@quorum-lab/consistency';
+import { VersionedEntry, CausalSessionTracker, ClientSessionContext } from '@quorum-lab/consistency';
 
 export class NodeServiceImpl {
   private readonly engine: NodeEngine;
@@ -26,6 +26,16 @@ export class NodeServiceImpl {
         return;
       }
 
+      const sessionHeader = call.metadata?.get('x-session-token')?.[0];
+      let sessionCtx: ClientSessionContext | undefined;
+      if (sessionHeader) {
+        try {
+          sessionCtx = ClientSessionContext.decodeToken(String(sessionHeader));
+        } catch {}
+      } else if (client_id) {
+        sessionCtx = new ClientSessionContext(String(client_id));
+      }
+
       const valBuffer = Buffer.isBuffer(value)
         ? value
         : value instanceof Uint8Array
@@ -40,6 +50,17 @@ export class NodeServiceImpl {
         operationId: operation_id ?? '',
         requestId: request_id ?? ''
       });
+
+      let sessionToken: string | undefined;
+      if (sessionCtx && result.version) {
+        sessionCtx.recordWrite(result.version);
+        sessionToken = sessionCtx.encodeToken();
+      }
+
+      const trailer = new grpc.Metadata();
+      if (sessionToken) {
+        trailer.set('x-session-token', sessionToken);
+      }
 
       callback(null, {
         status: {
@@ -65,7 +86,7 @@ export class NodeServiceImpl {
             wall_time_ms: v.wallTimeMs
           }))
         }
-      });
+      }, trailer);
     } catch (err: any) {
       if (err instanceof IdempotencyConflictError) {
         callback(null, {
@@ -106,11 +127,40 @@ export class NodeServiceImpl {
       const causalDependency = causalToken
         ? CausalSessionTracker.decodeToken(String(causalToken))
         : undefined;
+
+      const sessionToken = call.metadata?.get('x-session-token')?.[0];
+      let sessionCtx: ClientSessionContext | undefined;
+      let sessionDependency: Record<string, number> | undefined;
+      if (sessionToken) {
+        try {
+          sessionCtx = ClientSessionContext.decodeToken(String(sessionToken));
+          sessionDependency = sessionCtx.getFrontier();
+        } catch {}
+      } else if (call.request?.client_id) {
+        sessionCtx = new ClientSessionContext(String(call.request.client_id));
+      }
+
+      const effectiveDependency = sessionDependency ?? causalDependency;
       const conflictStrategy = (call.metadata?.get('x-conflict-strategy')?.[0] as any) ?? undefined;
 
       const result = isInternalPeerRead
         ? this.engine.get({ key })
-        : await this.engine.distributedGet({ key, causalDependency, conflictStrategy });
+        : await this.engine.distributedGet({
+            key,
+            causalDependency: effectiveDependency,
+            conflictStrategy
+          });
+
+      let updatedSessionToken: string | undefined;
+      if (sessionCtx) {
+        sessionCtx.recordRead(result.frontier);
+        updatedSessionToken = sessionCtx.encodeToken();
+      }
+
+      const trailer = new grpc.Metadata();
+      if (updatedSessionToken) {
+        trailer.set('x-session-token', updatedSessionToken);
+      }
 
       callback(null, {
         status: {
@@ -138,7 +188,7 @@ export class NodeServiceImpl {
             wall_time_ms: v.wallTimeMs
           }))
         }
-      });
+      }, trailer);
     } catch (err: any) {
       callback({
         code: grpc.status.INTERNAL,
@@ -161,6 +211,16 @@ export class NodeServiceImpl {
         return;
       }
 
+      const sessionHeader = call.metadata?.get('x-session-token')?.[0];
+      let sessionCtx: ClientSessionContext | undefined;
+      if (sessionHeader) {
+        try {
+          sessionCtx = ClientSessionContext.decodeToken(String(sessionHeader));
+        } catch {}
+      } else if (client_id) {
+        sessionCtx = new ClientSessionContext(String(client_id));
+      }
+
       const result = await this.engine.delete({
         key,
         runId: run_id ?? '',
@@ -168,6 +228,17 @@ export class NodeServiceImpl {
         operationId: operation_id ?? '',
         requestId: request_id ?? ''
       });
+
+      let sessionToken: string | undefined;
+      if (sessionCtx && result.tombstoneVersion) {
+        sessionCtx.recordWrite(result.tombstoneVersion);
+        sessionToken = sessionCtx.encodeToken();
+      }
+
+      const trailer = new grpc.Metadata();
+      if (sessionToken) {
+        trailer.set('x-session-token', sessionToken);
+      }
 
       callback(null, {
         status: {
@@ -193,7 +264,7 @@ export class NodeServiceImpl {
             wall_time_ms: v.wallTimeMs
           }))
         }
-      });
+      }, trailer);
     } catch (err: any) {
       if (err instanceof IdempotencyConflictError) {
         callback(null, {

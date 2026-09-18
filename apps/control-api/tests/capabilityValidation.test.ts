@@ -68,7 +68,7 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
     expect(body.firstValidMilestone).toBe('Q8');
   });
 
-  it('rejects SESSION read consistency with 422 under Q5 (requires Q7)', async () => {
+  it('accepts SESSION read consistency under Q7', async () => {
     const projRes = await app.inject({
       method: 'POST',
       url: '/v1/projects',
@@ -93,10 +93,9 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
       }
     });
 
-    expect(clusterRes.statusCode).toBe(422);
+    expect(clusterRes.statusCode).toBe(201);
     const body = JSON.parse(clusterRes.body);
-    expect(body.error).toBe('FEATURE_NOT_AVAILABLE_IN_MILESTONE');
-    expect(body.firstValidMilestone).toBe('Q7');
+    expect(body.policy.readConsistency.mode).toBe('SESSION');
   });
 
   it('accepts Q5 conflict strategies (VERSION_VECTOR, MULTI_VALUE, CUSTOM_MERGE) and CAUSAL read consistency', async () => {

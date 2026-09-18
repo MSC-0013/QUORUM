@@ -4,3 +4,4 @@ export * from './syncReplicationEngine.js';
 export * from './asyncReplicationEngine.js';
 export * from './lwwResolver.js';
 export * from './quorumReplicationEngine.js';
+export * from './sessionRouter.js';
