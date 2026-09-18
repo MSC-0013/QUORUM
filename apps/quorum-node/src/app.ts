@@ -24,6 +24,11 @@ export interface QuorumNodeAppOptions {
   durabilityMode?: LocalDurabilityMode;
   replicationMode?: ReplicationMode;
   quorumConfig?: QuorumConfig;
+  leaderConfig?: {
+    initialLeaderId?: string;
+    initialEpoch?: number;
+    leaseDurationMs?: number;
+  };
 }
 
 export class QuorumNodeApp {
@@ -67,7 +72,8 @@ export class QuorumNodeApp {
       this.storage,
       this.store,
       options?.replicationMode ?? 'NONE',
-      options?.quorumConfig
+      options?.quorumConfig,
+      options?.leaderConfig
     );
 
     // Wire network fault interceptor into peer client pool

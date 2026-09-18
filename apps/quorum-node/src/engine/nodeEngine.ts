@@ -18,6 +18,8 @@ import {
   SyncReplicationEngine,
   AsyncReplicationEngine,
   QuorumReplicationEngine,
+  LeaderReplicationEngine,
+  FencingCoordinator,
   QuorumConfig,
   PeerClientPool,
   ReplicationResult
@@ -58,7 +60,7 @@ export interface NodeEngineGetResult {
   frontier: VersionFrontier;
 }
 
-export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC' | 'QUORUM';
+export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC' | 'QUORUM' | 'LEADER';
 
 export class NodeEngine {
   public readonly store: MemStore;
@@ -68,6 +70,14 @@ export class NodeEngine {
   public readonly peerPool: PeerClientPool;
   public readonly hintedHandoff: HintedHandoffManager;
   public readonly readRepair: ReadRepairCoordinator;
+  public readonly fencingCoordinator: FencingCoordinator;
+  private readonly preparedWrites: Map<string, {
+    key: string;
+    value: Uint8Array;
+    epoch: number;
+    leaderId: string;
+    preparedAtMs: number;
+  }> = new Map();
   public replicationEngine: ReplicationEngine | null = null;
 
   constructor(
@@ -75,7 +85,8 @@ export class NodeEngine {
     storage?: StorageEngine,
     store?: MemStore,
     replicationMode: ReplicationMode = 'NONE',
-    quorumConfig?: QuorumConfig
+    quorumConfig?: QuorumConfig,
+    leaderConfig?: { initialLeaderId?: string; initialEpoch?: number; leaseDurationMs?: number }
   ) {
     this.runtime = runtime;
     this.store = store ?? new MemStore();
@@ -89,6 +100,11 @@ export class NodeEngine {
     this.peerPool = new PeerClientPool();
     this.hintedHandoff = new HintedHandoffManager(new HintStore(this.storage));
     this.readRepair = new ReadRepairCoordinator();
+    this.fencingCoordinator = new FencingCoordinator({
+      initialLeaderId: leaderConfig?.initialLeaderId,
+      initialEpoch: leaderConfig?.initialEpoch ?? 1,
+      leaseDurationMs: leaderConfig?.leaseDurationMs ?? 5000
+    });
 
     this.initReplicationEngine(replicationMode, quorumConfig);
   }
@@ -164,6 +180,15 @@ export class NodeEngine {
         quorumConfig: quorumConfig ?? { W: 2, R: 2 },
         readRepairCoordinator: this.readRepair,
         hintedHandoffManager: this.hintedHandoff
+      });
+    } else if (mode === 'LEADER') {
+      this.replicationEngine = new LeaderReplicationEngine({
+        localNodeId: this.runtime.nodeId,
+        localOps,
+        peerPool: this.peerPool,
+        getMembership: () => this.runtime.getMembership(),
+        fencingCoordinator: this.fencingCoordinator,
+        quorumConfig: quorumConfig ?? { W: 2, R: 1 }
       });
     }
   }
@@ -293,6 +318,19 @@ export class NodeEngine {
       };
     }
 
+    // 1b. Fencing epoch verification (§Q8)
+    if (params.fencingEpoch > 0) {
+      const fencingCheck = this.fencingCoordinator.verifyFencingEpoch(params.fencingEpoch);
+      if (!fencingCheck.valid) {
+        return {
+          status: ProtoStatusCode.STATUS_CODE_FENCED,
+          durableAcked: false,
+          message: `Fencing violation: incoming epoch ${params.fencingEpoch} < current epoch ${fencingCheck.currentEpoch}`
+        };
+      }
+      this.fencingCoordinator.adoptEpoch(params.fencingEpoch, params.sourceNode);
+    }
+
     // 2. Witness Lamport clock
     this.runtime.clocks.lamport.witness(BigInt(params.entry.version.lamport));
 
@@ -404,6 +442,72 @@ export class NodeEngine {
       peerPool: this.peerPool,
       membership: this.runtime.getMembership()
     });
+  }
+
+  public prepareWrite(params: {
+    key: string;
+    value: Uint8Array;
+    epoch: number;
+    leaderId: string;
+  }): { status: ProtoStatusCode; message?: string } {
+    if (params.epoch > 0) {
+      const fencingCheck = this.fencingCoordinator.verifyFencingEpoch(params.epoch);
+      if (!fencingCheck.valid) {
+        return {
+          status: ProtoStatusCode.STATUS_CODE_FENCED,
+          message: `Fencing violation: epoch ${params.epoch} < current epoch ${fencingCheck.currentEpoch}`
+        };
+      }
+      this.fencingCoordinator.adoptEpoch(params.epoch, params.leaderId);
+    }
+
+    this.preparedWrites.set(params.key, {
+      key: params.key,
+      value: params.value,
+      epoch: params.epoch,
+      leaderId: params.leaderId,
+      preparedAtMs: Date.now()
+    });
+
+    return { status: ProtoStatusCode.STATUS_CODE_OK, message: 'OK' };
+  }
+
+  public async commitWrite(params: {
+    key: string;
+    epoch: number;
+    leaderId: string;
+  }): Promise<{ status: ProtoStatusCode; message?: string }> {
+    if (params.epoch > 0) {
+      const fencingCheck = this.fencingCoordinator.verifyFencingEpoch(params.epoch);
+      if (!fencingCheck.valid) {
+        return {
+          status: ProtoStatusCode.STATUS_CODE_FENCED,
+          message: `Fencing violation: epoch ${params.epoch} < current epoch ${fencingCheck.currentEpoch}`
+        };
+      }
+      this.fencingCoordinator.adoptEpoch(params.epoch, params.leaderId);
+    }
+
+    const prepared = this.preparedWrites.get(params.key);
+    if (!prepared) {
+      return {
+        status: ProtoStatusCode.STATUS_CODE_NOT_FOUND,
+        message: `No prepared write found for key ${params.key}`
+      };
+    }
+    this.preparedWrites.delete(params.key);
+
+    await this.mutationExecutor.execute({
+      recordType: WalRecordType.PUT,
+      key: params.key,
+      value: prepared.value,
+      clientId: `leader:${params.leaderId}`,
+      requestId: `commit-${Date.now()}`,
+      operationId: `commit-op-${Date.now()}`,
+      runId: 'commit-run'
+    });
+
+    return { status: ProtoStatusCode.STATUS_CODE_OK, message: 'OK' };
   }
 
   public async close(): Promise<void> {

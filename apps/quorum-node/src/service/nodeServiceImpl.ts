@@ -533,23 +533,62 @@ export class NodeServiceImpl {
   };
 
   public prepareWrite = (
-    _call: grpc.ServerUnaryCall<any, any>,
+    call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
   ): void => {
-    callback({
-      code: grpc.status.UNIMPLEMENTED,
-      message: 'PrepareWrite is not implemented in Milestone Q1 (scheduled for Q8)'
-    });
+    try {
+      const { key, value, epoch, leader_id } = call.request;
+      const valBuffer = Buffer.isBuffer(value)
+        ? value
+        : value instanceof Uint8Array
+          ? Buffer.from(value)
+          : Buffer.from(String(value ?? ''));
+
+      const res = this.engine.prepareWrite({
+        key,
+        value: valBuffer,
+        epoch: Number(epoch ?? 0),
+        leaderId: leader_id ?? ''
+      });
+
+      callback(null, {
+        status: {
+          code: res.status,
+          message: res.message ?? 'OK'
+        }
+      });
+    } catch (err: any) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: err?.message ?? 'Internal error during PrepareWrite'
+      });
+    }
   };
 
-  public commitWrite = (
-    _call: grpc.ServerUnaryCall<any, any>,
+  public commitWrite = async (
+    call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
-    callback({
-      code: grpc.status.UNIMPLEMENTED,
-      message: 'CommitWrite is not implemented in Milestone Q1 (scheduled for Q8)'
-    });
+  ): Promise<void> => {
+    try {
+      const { key, epoch, leader_id } = call.request;
+      const res = await this.engine.commitWrite({
+        key,
+        epoch: Number(epoch ?? 0),
+        leaderId: leader_id ?? ''
+      });
+
+      callback(null, {
+        status: {
+          code: res.status,
+          message: res.message ?? 'OK'
+        }
+      });
+    } catch (err: any) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: err?.message ?? 'Internal error during CommitWrite'
+      });
+    }
   };
 
   public getServiceImplementation(): grpc.UntypedServiceImplementation {

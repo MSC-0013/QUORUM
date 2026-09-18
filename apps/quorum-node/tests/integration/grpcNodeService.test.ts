@@ -224,8 +224,21 @@ describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
     expect(digestResult.bucket_id).toBe(0);
     expect(digestResult.merkle_root_hash).toBeDefined();
 
-    // Remaining future milestone RPCs (Q8)
-    await testUnimplemented((cb) => nodeClient.PrepareWrite({}, cb));
-    await testUnimplemented((cb) => nodeClient.CommitWrite({}, cb));
+    // PrepareWrite and CommitWrite implemented in Q8
+    const prepResult: any = await new Promise((resolve, reject) => {
+      nodeClient.PrepareWrite({ key: 'test-prep', value: Buffer.from('val'), epoch: 1, leader_id: 'leader' }, (err: any, resp: any) => {
+        if (err) reject(err);
+        else resolve(resp);
+      });
+    });
+    expect(prepResult.status.code === 1 || prepResult.status.code === 'STATUS_CODE_OK').toBe(true);
+
+    const commitResult: any = await new Promise((resolve, reject) => {
+      nodeClient.CommitWrite({ key: 'test-prep', epoch: 1, leader_id: 'leader' }, (err: any, resp: any) => {
+        if (err) reject(err);
+        else resolve(resp);
+      });
+    });
+    expect(commitResult.status.code === 1 || commitResult.status.code === 'STATUS_CODE_OK').toBe(true);
   });
 });

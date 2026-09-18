@@ -76,8 +76,8 @@ export function resolveQuorumNumbers(
 export function validateClusterPolicyConfig(
   policy: ClusterPolicyConfig,
   clusterSize = 3,
-  currentMilestoneNumber = 7,
-  currentMilestoneName = 'Q7'
+  currentMilestoneNumber = 8,
+  currentMilestoneName = 'Q8'
 ): { policy: ClusterPolicyConfig; quorumNumbers: ResolvedQuorumNumbers } {
   // 1. Verify capability availability per §Q3 capability table
   assertFeatureAvailableInMilestone(

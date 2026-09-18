@@ -164,6 +164,102 @@ export class PeerClientPool {
     });
   }
 
+  public async prepareWriteOnPeer(params: {
+    peerNodeId: string;
+    key: string;
+    value: Uint8Array;
+    epoch: number;
+    leaderId: string;
+    timeoutMs?: number;
+  }): Promise<{ status: number; message?: string }> {
+    const client = this.clients.get(params.peerNodeId);
+    if (!client) {
+      return { status: 10, message: `Peer ${params.peerNodeId} not registered in peer client pool` };
+    }
+
+    const deadline = new Date(Date.now() + (params.timeoutMs ?? 5000));
+    return new Promise((resolve) => {
+      client.PrepareWrite(
+        {
+          key: params.key,
+          value: Buffer.from(params.value),
+          epoch: params.epoch,
+          leader_id: params.leaderId
+        },
+        { deadline },
+        (err: any, resp: any) => {
+          if (err) {
+            resolve({ status: 10, message: err.message });
+            return;
+          }
+          const rawCode = resp?.status?.code;
+          let statusCode = 1;
+          if (typeof rawCode === 'number') {
+            statusCode = rawCode;
+          } else if (rawCode === 'STATUS_CODE_FENCED') {
+            statusCode = 7;
+          } else if (rawCode === 'STATUS_CODE_OK') {
+            statusCode = 1;
+          } else if (rawCode) {
+            statusCode = Number(rawCode) || 1;
+          }
+
+          resolve({
+            status: statusCode,
+            message: resp?.status?.message
+          });
+        }
+      );
+    });
+  }
+
+  public async commitWriteOnPeer(params: {
+    peerNodeId: string;
+    key: string;
+    epoch: number;
+    leaderId: string;
+    timeoutMs?: number;
+  }): Promise<{ status: number; message?: string }> {
+    const client = this.clients.get(params.peerNodeId);
+    if (!client) {
+      return { status: 10, message: `Peer ${params.peerNodeId} not registered in peer client pool` };
+    }
+
+    const deadline = new Date(Date.now() + (params.timeoutMs ?? 5000));
+    return new Promise((resolve) => {
+      client.CommitWrite(
+        {
+          key: params.key,
+          epoch: params.epoch,
+          leader_id: params.leaderId
+        },
+        { deadline },
+        (err: any, resp: any) => {
+          if (err) {
+            resolve({ status: 10, message: err.message });
+            return;
+          }
+          const rawCode = resp?.status?.code;
+          let statusCode = 1;
+          if (typeof rawCode === 'number') {
+            statusCode = rawCode;
+          } else if (rawCode === 'STATUS_CODE_FENCED') {
+            statusCode = 7;
+          } else if (rawCode === 'STATUS_CODE_OK') {
+            statusCode = 1;
+          } else if (rawCode) {
+            statusCode = Number(rawCode) || 1;
+          }
+
+          resolve({
+            status: statusCode,
+            message: resp?.status?.message
+          });
+        }
+      );
+    });
+  }
+
   public async close(): Promise<void> {
     for (const client of this.clients.values()) {
       try {
