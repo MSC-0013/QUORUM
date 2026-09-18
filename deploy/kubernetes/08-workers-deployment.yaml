@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quorum-experiment-worker
+  namespace: quorum-lab
+  labels:
+    app: quorum-experiment-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: quorum-experiment-worker
+  template:
+    metadata:
+      labels:
+        app: quorum-experiment-worker
+    spec:
+      serviceAccountName: quorum-worker-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: experiment-worker
+          image: quorum-lab/experiment-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: WORKER_CONCURRENCY
+              value: "4"
+            - name: KAFKA_BROKERS
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: KAFKA_BROKERS
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quorum-analysis-worker
+  namespace: quorum-lab
+  labels:
+    app: quorum-analysis-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: quorum-analysis-worker
+  template:
+    metadata:
+      labels:
+        app: quorum-analysis-worker
+    spec:
+      serviceAccountName: quorum-worker-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: analysis-worker
+          image: quorum-lab/analysis-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: KAFKA_BROKERS
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: KAFKA_BROKERS
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quorum-report-worker
+  namespace: quorum-lab
+  labels:
+    app: quorum-report-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quorum-report-worker
+  template:
+    metadata:
+      labels:
+        app: quorum-report-worker
+    spec:
+      serviceAccountName: quorum-worker-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: report-worker
+          image: quorum-lab/report-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: KAFKA_BROKERS
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: KAFKA_BROKERS
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}

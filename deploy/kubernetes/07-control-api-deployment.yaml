@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: quorum-control-api
+  namespace: quorum-lab
+  labels:
+    app: quorum-control-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      name: http-api
+      targetPort: 3000
+  selector:
+    app: quorum-control-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quorum-control-api
+  namespace: quorum-lab
+  labels:
+    app: quorum-control-api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: quorum-control-api
+  template:
+    metadata:
+      labels:
+        app: quorum-control-api
+    spec:
+      serviceAccountName: quorum-control-api-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: control-api
+          image: quorum-lab/control-api:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: MYSQL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: MYSQL_HOST
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: MYSQL_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: MYSQL_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: MYSQL_DATABASE
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: REDIS_PORT
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: quorum-secrets
+                  key: REDIS_PASSWORD
+          ports:
+            - containerPort: 3000
+              name: http-api
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}

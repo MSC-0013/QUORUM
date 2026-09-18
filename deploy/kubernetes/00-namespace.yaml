@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: quorum-lab
+  labels:
+    app.kubernetes.io/name: quorum-lab
+    app.kubernetes.io/part-of: quorum-lab
+    environment: production

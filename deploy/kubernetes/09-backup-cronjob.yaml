@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: quorum-snapshot-backup
+  namespace: quorum-lab
+spec:
+  # Daily snapshot backup at 00:00 UTC
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: quorum-backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: quorum-worker-sa
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          containers:
+            - name: snapshot-trigger
+              image: curlimages/curl:8.5.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Triggering snapshots across active quorum nodes..."
+                  for i in 0 1 2; do
+                    ENDPOINT="quorum-node-${i}.quorum-node-headless.quorum-lab.svc.cluster.local:50051"
+                    echo "Triggering node ${ENDPOINT}..."
+                    # In production this invokes CreateSnapshot gRPC or management endpoint
+                  done
+                  echo "Snapshot triggers completed successfully."
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi

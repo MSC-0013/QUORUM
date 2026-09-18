@@ -22,6 +22,13 @@ import { LocalDurabilityMode } from '@quorum-lab/storage';
 import { ReplicationMode } from './engine/nodeEngine.js';
 import { QuorumConfig, RaftRole } from '@quorum-lab/replication';
 
+export interface ServerTlsConfig {
+  caCert?: Buffer | string;
+  serverCert: Buffer | string;
+  serverKey: Buffer | string;
+  requireClientCert?: boolean;
+}
+
 export interface QuorumNodeAppOptions {
   durabilityMode?: LocalDurabilityMode;
   replicationMode?: ReplicationMode;
@@ -36,10 +43,12 @@ export interface QuorumNodeAppOptions {
     initialRole?: RaftRole;
     initialLeaderId?: string;
   };
+  tlsConfig?: ServerTlsConfig;
 }
 
 export class QuorumNodeApp {
   public readonly config: AppConfig;
+  public readonly options?: QuorumNodeAppOptions;
   public readonly lifecycle: NodeLifecycle;
   public readonly clocks: DefaultNodeClocks;
   public readonly runtime: DefaultNodeRuntimeState;
@@ -52,6 +61,7 @@ export class QuorumNodeApp {
 
   constructor(config: AppConfig, options?: QuorumNodeAppOptions) {
     this.config = config;
+    this.options = options;
     this.lifecycle = new NodeLifecycle();
     this.clocks = new DefaultNodeClocks(config.node.id);
     this.faultRegistry = new FaultRegistry();
@@ -136,9 +146,24 @@ export class QuorumNodeApp {
     const address = `${this.config.node.grpcHost ?? '0.0.0.0'}:${this.config.node.grpcPort}`;
 
     return new Promise<number>((resolve, reject) => {
+      let serverCreds: grpc.ServerCredentials;
+      if (this.options?.tlsConfig) {
+        const rootCerts = this.options.tlsConfig.caCert ? Buffer.from(this.options.tlsConfig.caCert) : null;
+        const keyCertPairs = [
+          {
+            cert_chain: Buffer.from(this.options.tlsConfig.serverCert),
+            private_key: Buffer.from(this.options.tlsConfig.serverKey)
+          }
+        ];
+        const checkClientCert = Boolean(this.options.tlsConfig.requireClientCert);
+        serverCreds = grpc.ServerCredentials.createSsl(rootCerts, keyCertPairs, checkClientCert);
+      } else {
+        serverCreds = grpc.ServerCredentials.createInsecure();
+      }
+
       this.server.bindAsync(
         address,
-        grpc.ServerCredentials.createInsecure(),
+        serverCreds,
         (error, port) => {
           if (error) {
             this.lifecycle.transitionTo('DEGRADED');

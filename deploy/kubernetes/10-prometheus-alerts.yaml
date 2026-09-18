@@ -1,0 +1,65 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: quorum-observability-alerts
+  namespace: quorum-lab
+  labels:
+    role: alert-rules
+    app.kubernetes.io/part-of: quorum-lab
+spec:
+  groups:
+    - name: quorum.replication.alerts
+      rules:
+        - alert: QuorumReplicationLagHigh
+          expr: quorum_replication_lag_seconds > 0.5
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Quorum replication lag exceeding SLA on {{ $labels.instance }}"
+            description: "Node {{ $labels.instance }} has replication lag {{ $value }}s (> 500ms)."
+
+        - alert: QuorumFencingViolationRate
+          expr: rate(quorum_fencing_violations_total[1m]) > 0
+          for: 30s
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fencing token violation detected: split-brain risk"
+            description: "Node {{ $labels.instance }} rejected writes with stale fencing epoch. A partitioned or stale leader may be attempting concurrent writes."
+
+        - alert: QuorumLeaderElectionChurn
+          expr: changes(quorum_raft_leader_term[5m]) > 3
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Consensus leader election churn"
+            description: "Cluster {{ $labels.cluster_id }} experienced {{ $value }} leader changes in 5 minutes. Network instability or CPU starvation suspected."
+
+        - alert: QuorumReadRepairBacklog
+          expr: quorum_read_repair_backlog_count > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Read repair backlog elevated"
+            description: "Unreconciled replica divergence exceeds 100 entries on {{ $labels.instance }}."
+
+        - alert: QuorumHintBacklogHigh
+          expr: quorum_hinted_handoff_pending_count > 1000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Hinted handoff queue backlog high"
+            description: "Pending hints towards unreachable peers exceeds 1000 items."
+
+        - alert: QuorumNodeOffline
+          expr: up{job="quorum-node"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Quorum node is unreachable"
+            description: "Quorum node instance {{ $labels.instance }} has been down for over 1 minute."

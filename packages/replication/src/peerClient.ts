@@ -8,9 +8,21 @@ import { ReplicaAckInfo } from './types.js';
 
 import { RaftLogEntry } from './raftLog.js';
 
+export interface PeerTlsConfig {
+  readonly caCert?: Buffer | string;
+  readonly clientCert?: Buffer | string;
+  readonly clientKey?: Buffer | string;
+  readonly serverNameOverride?: string;
+}
+
 export interface PeerEndpoint {
   readonly nodeId: string;
   readonly address: string; // e.g. "127.0.0.1:50052"
+  readonly tls?: PeerTlsConfig;
+}
+
+export interface PeerClientPoolOptions {
+  readonly defaultTls?: PeerTlsConfig;
 }
 
 export type NetworkFaultInterceptor = (params: {
@@ -25,9 +37,11 @@ export class PeerClientPool {
   private readonly raftClients = new Map<string, any>();
   private readonly NodeServiceConstructor: any;
   private readonly RaftServiceConstructor: any;
+  private readonly defaultTls?: PeerTlsConfig;
   private faultInterceptor?: NetworkFaultInterceptor;
 
-  constructor() {
+  constructor(options?: PeerClientPoolOptions) {
+    this.defaultTls = options?.defaultTls;
     const nodePackageDef = protoLoader.loadSync(path.join(PROTO_DIR, 'node.proto'), {
       keepCase: true,
       longs: String,
@@ -56,17 +70,36 @@ export class PeerClientPool {
   }
 
   public registerPeer(endpoint: PeerEndpoint): void {
+    const tlsConfig = endpoint.tls ?? this.defaultTls;
+    let creds: grpc.ChannelCredentials;
+    const channelOptions: Record<string, any> = {};
+
+    if (tlsConfig) {
+      const rootCerts = tlsConfig.caCert ? Buffer.from(tlsConfig.caCert) : null;
+      const privateKey = tlsConfig.clientKey ? Buffer.from(tlsConfig.clientKey) : null;
+      const certChain = tlsConfig.clientCert ? Buffer.from(tlsConfig.clientCert) : null;
+      creds = grpc.credentials.createSsl(rootCerts, privateKey, certChain);
+      if (tlsConfig.serverNameOverride) {
+        channelOptions['grpc.ssl_target_name_override'] = tlsConfig.serverNameOverride;
+        channelOptions['grpc.default_authority'] = tlsConfig.serverNameOverride;
+      }
+    } else {
+      creds = grpc.credentials.createInsecure();
+    }
+
     if (!this.clients.has(endpoint.nodeId)) {
       const client = new this.NodeServiceConstructor(
         endpoint.address,
-        grpc.credentials.createInsecure()
+        creds,
+        channelOptions
       );
       this.clients.set(endpoint.nodeId, client);
     }
     if (!this.raftClients.has(endpoint.nodeId)) {
       const raftClient = new this.RaftServiceConstructor(
         endpoint.address,
-        grpc.credentials.createInsecure()
+        creds,
+        channelOptions
       );
       this.raftClients.set(endpoint.nodeId, raftClient);
     }
@@ -453,5 +486,9 @@ export class PeerClientPool {
       }
     }
     this.raftClients.clear();
+  }
+
+  public async closeAll(): Promise<void> {
+    await this.close();
   }
 }

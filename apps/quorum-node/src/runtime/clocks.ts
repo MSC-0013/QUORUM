@@ -17,6 +17,7 @@ export interface NodeClocks {
   readonly lamport: LamportClock;
   mintVersionStamp(vectorClock?: Record<string, number>): VersionStamp;
   getDotCounter(): number;
+  setDotCounter(counter: number): void;
 }
 
 export class DefaultNodeClocks implements NodeClocks {
@@ -35,6 +36,12 @@ export class DefaultNodeClocks implements NodeClocks {
 
   public getDotCounter(): number {
     return this.dotCounter;
+  }
+
+  public setDotCounter(counter: number): void {
+    if (counter > this.dotCounter) {
+      this.dotCounter = counter;
+    }
   }
 
   public mintVersionStamp(customVectorClock?: Record<string, number>): VersionStamp {

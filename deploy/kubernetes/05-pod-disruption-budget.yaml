@@ -1,0 +1,22 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: quorum-node-pdb
+  namespace: quorum-lab
+spec:
+  # In an N=3 cluster, majority quorum is 2. Permitting at most 1 unavailable pod guarantees quorum safety.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: quorum-node
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: quorum-control-api-pdb
+  namespace: quorum-lab
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: quorum-control-api

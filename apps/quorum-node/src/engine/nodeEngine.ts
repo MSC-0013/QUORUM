@@ -241,6 +241,30 @@ export class NodeEngine {
 
   public async recover(): Promise<void> {
     const report = await this.storage.recover(this.store);
+
+    let maxDot = 0;
+    let maxLamport = 0;
+    for (const key of this.store.getAllKeys()) {
+      const state = this.store.get(key);
+      for (const entry of state.entries) {
+        if (entry.version.dot.nodeId === this.runtime.nodeId) {
+          if (entry.version.dot.counter > maxDot) {
+            maxDot = entry.version.dot.counter;
+          }
+        }
+        if (entry.version.lamport > maxLamport) {
+          maxLamport = entry.version.lamport;
+        }
+      }
+    }
+
+    if (maxDot > 0) {
+      this.runtime.clocks.setDotCounter(maxDot);
+    }
+    if (maxLamport > 0) {
+      this.runtime.clocks.lamport.witness(BigInt(maxLamport));
+    }
+
     console.log(
       `[NODE ${this.runtime.nodeId}] Recovery complete: snapshot=${report.snapshotLoaded}, replayed=${report.recordsReplayed}, lastSeq=${report.lastSequence}`
     );
