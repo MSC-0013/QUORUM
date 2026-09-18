@@ -43,7 +43,7 @@ export class DefaultNodeClocks implements NodeClocks {
     const wallMs = this.wall.nowMs();
 
     const vc: Record<string, number> = customVectorClock ? { ...customVectorClock } : {};
-    vc[this.nodeId] = (vc[this.nodeId] ?? 0) + 1;
+    vc[this.nodeId] = Math.max(Number(vc[this.nodeId] ?? 0), this.dotCounter);
 
     return createVersionStamp({
       nodeId: this.nodeId,

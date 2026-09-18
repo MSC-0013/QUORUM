@@ -204,7 +204,11 @@ export class NodeEngine {
     };
   }
 
-  public async distributedGet(params: { key: string }): Promise<NodeEngineGetResult> {
+  public async distributedGet(params: {
+    key: string;
+    causalDependency?: Record<string, number>;
+    conflictStrategy?: 'LAST_WRITE_WINS' | 'MULTI_VALUE' | 'CUSTOM_MERGE' | 'VERSION_VECTOR';
+  }): Promise<NodeEngineGetResult> {
     if (this.replicationEngine) {
       const repRes = await this.replicationEngine.get(params);
       return {

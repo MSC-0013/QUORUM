@@ -17,8 +17,8 @@ export function compareVectorClocks(a: VectorClock, b: VectorClock): VectorClock
   let bHasGreater = false;
 
   for (const key of allKeys) {
-    const valA = a[key] ?? 0;
-    const valB = b[key] ?? 0;
+    const valA = Number(a[key] ?? 0);
+    const valB = Number(b[key] ?? 0);
 
     if (valA > valB) {
       aHasGreater = true;
@@ -40,7 +40,7 @@ export function compareVectorClocks(a: VectorClock, b: VectorClock): VectorClock
  * Returns a new vector clock with nodeId incremented by 1.
  */
 export function incrementVectorClock(vc: VectorClock, nodeId: string): Record<string, number> {
-  const current = vc[nodeId] ?? 0;
+  const current = Number(vc[nodeId] ?? 0);
   return {
     ...vc,
     [nodeId]: current + 1
@@ -51,9 +51,12 @@ export function incrementVectorClock(vc: VectorClock, nodeId: string): Record<st
  * Merges two vector clocks by computing the pointwise maximum for every known node.
  */
 export function mergeVectorClocks(a: VectorClock, b: VectorClock): Record<string, number> {
-  const merged: Record<string, number> = { ...a };
+  const merged: Record<string, number> = {};
+  for (const [nodeId, count] of Object.entries(a)) {
+    merged[nodeId] = Number(count);
+  }
   for (const [nodeId, count] of Object.entries(b)) {
-    merged[nodeId] = Math.max(merged[nodeId] ?? 0, count);
+    merged[nodeId] = Math.max(merged[nodeId] ?? 0, Number(count));
   }
   return merged;
 }

@@ -35,6 +35,8 @@ export interface ReplicationGetParams {
   readonly clientId?: string;
   readonly operationId?: string;
   readonly requestId?: string;
+  readonly causalDependency?: Record<string, number>;
+  readonly conflictStrategy?: 'LAST_WRITE_WINS' | 'MULTI_VALUE' | 'CUSTOM_MERGE' | 'VERSION_VECTOR';
 }
 
 export interface ReplicationResult {

@@ -68,7 +68,7 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
     expect(body.firstValidMilestone).toBe('Q8');
   });
 
-  it('rejects VERSION_VECTOR conflict strategy with 422 under Q3', async () => {
+  it('rejects SESSION read consistency with 422 under Q5 (requires Q7)', async () => {
     const projRes = await app.inject({
       method: 'POST',
       url: '/v1/projects',
@@ -81,14 +81,14 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
       url: '/v1/clusters',
       payload: {
         projectId: proj.id,
-        name: 'VV Cluster',
+        name: 'Session Cluster',
         members: ['node-1', 'node-2', 'node-3'],
         policy: {
           replicationEngine: 'LEADERLESS',
-          readConsistency: { mode: 'QUORUM' },
+          readConsistency: { mode: 'SESSION' },
           writeAck: { mode: 'QUORUM' },
           localDurability: { mode: 'SYNC_FSYNC' },
-          conflictStrategy: { mode: 'VERSION_VECTOR' }
+          conflictStrategy: { mode: 'LAST_WRITE_WINS' }
         }
       }
     });
@@ -96,30 +96,31 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
     expect(clusterRes.statusCode).toBe(422);
     const body = JSON.parse(clusterRes.body);
     expect(body.error).toBe('FEATURE_NOT_AVAILABLE_IN_MILESTONE');
-    expect(body.firstValidMilestone).toBe('Q5');
+    expect(body.firstValidMilestone).toBe('Q7');
   });
 
-  it('accepts valid Q3 policy configuration and calculates quorum numbers', async () => {
+  it('accepts Q5 conflict strategies (VERSION_VECTOR, MULTI_VALUE, CUSTOM_MERGE) and CAUSAL read consistency', async () => {
     const projRes = await app.inject({
       method: 'POST',
       url: '/v1/projects',
-      payload: { name: 'Valid Proj' }
+      payload: { name: 'Valid Q5 Proj' }
     });
     const proj = JSON.parse(projRes.body);
 
+    // Test CAUSAL + VERSION_VECTOR
     const clusterRes = await app.inject({
       method: 'POST',
       url: '/v1/clusters',
       payload: {
         projectId: proj.id,
-        name: 'Quorum Cluster',
+        name: 'Causal VV Cluster',
         members: ['node-1', 'node-2', 'node-3'],
         policy: {
           replicationEngine: 'LEADERLESS',
-          readConsistency: { mode: 'QUORUM' },
+          readConsistency: { mode: 'CAUSAL' },
           writeAck: { mode: 'QUORUM' },
           localDurability: { mode: 'SYNC_FSYNC' },
-          conflictStrategy: { mode: 'LAST_WRITE_WINS' }
+          conflictStrategy: { mode: 'VERSION_VECTOR' }
         }
       }
     });
@@ -129,8 +130,8 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
     expect(cluster.resolvedQuorum).toEqual({
       N: 3,
       W: 2,
-      R: 2,
-      hasQuorumIntersection: true
+      R: 1,
+      hasQuorumIntersection: false
     });
   });
 });

@@ -2,7 +2,7 @@ import * as grpc from '@grpc/grpc-js';
 import { NodeEngine } from '../engine/nodeEngine.js';
 import { ProtoStatusCode } from '@quorum-lab/protocol';
 import { IdempotencyConflictError } from '@quorum-lab/storage';
-import { VersionedEntry } from '@quorum-lab/consistency';
+import { VersionedEntry, CausalSessionTracker } from '@quorum-lab/consistency';
 
 export class NodeServiceImpl {
   private readonly engine: NodeEngine;
@@ -102,9 +102,15 @@ export class NodeServiceImpl {
 
       const isInternalPeerRead =
         call.metadata && call.metadata.get('x-internal-quorum-read').length > 0;
+      const causalToken = call.metadata?.get('x-causal-token')?.[0];
+      const causalDependency = causalToken
+        ? CausalSessionTracker.decodeToken(String(causalToken))
+        : undefined;
+      const conflictStrategy = (call.metadata?.get('x-conflict-strategy')?.[0] as any) ?? undefined;
+
       const result = isInternalPeerRead
         ? this.engine.get({ key })
-        : await this.engine.distributedGet({ key });
+        : await this.engine.distributedGet({ key, causalDependency, conflictStrategy });
 
       callback(null, {
         status: {
@@ -324,6 +330,12 @@ export class NodeServiceImpl {
             ? new Uint8Array(Buffer.from(rawVal))
             : null;
 
+      const rawVc = entry.version.vector_clock?.entries ?? {};
+      const parsedVc: Record<string, number> = {};
+      for (const [k, v] of Object.entries(rawVc)) {
+        parsedVc[k] = Number(v);
+      }
+
       const versionedEntry: VersionedEntry = {
         value: valueBytes,
         tombstone: Boolean(entry.tombstone),
@@ -332,7 +344,7 @@ export class NodeServiceImpl {
             nodeId: entry.version.dot.node_id,
             counter: Number(entry.version.dot.counter)
           },
-          vectorClock: entry.version.vector_clock?.entries ?? {},
+          vectorClock: parsedVc,
           lamport: Number(entry.version.lamport),
           wallTimeMs: Number(entry.version.wall_time_ms)
         }

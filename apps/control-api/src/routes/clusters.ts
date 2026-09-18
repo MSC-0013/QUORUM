@@ -33,12 +33,12 @@ export const clusterRoutes: FastifyPluginAsync<ClusterRouteOptions> = async (
     }
 
     try {
-      // Validate policy against Q3 capability matrix and resolve quorum numbers
+      // Validate policy against Q5 capability matrix and resolve quorum numbers
       const { quorumNumbers } = validateClusterPolicyConfig(
         body.policy,
         body.members.length,
-        3,
-        'Q3'
+        5,
+        'Q5'
       );
 
       const cluster = clusterRepo.createCluster({
@@ -127,8 +127,8 @@ export const clusterRoutes: FastifyPluginAsync<ClusterRouteOptions> = async (
       const { quorumNumbers } = validateClusterPolicyConfig(
         body.policy,
         cluster.members.length,
-        3,
-        'Q3'
+        5,
+        'Q5'
       );
 
       const updated = clusterRepo.updatePolicy(id, body.policy, quorumNumbers);

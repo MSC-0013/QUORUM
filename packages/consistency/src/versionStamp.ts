@@ -29,18 +29,18 @@ export function createVersionStamp(params: {
 }
 
 export function versionStampsEqual(a: VersionStamp, b: VersionStamp): boolean {
-  if (a.dot.nodeId !== b.dot.nodeId || a.dot.counter !== b.dot.counter) {
+  if (a.dot.nodeId !== b.dot.nodeId || Number(a.dot.counter) !== Number(b.dot.counter)) {
     return false;
   }
-  if (a.lamport !== b.lamport || a.wallTimeMs !== b.wallTimeMs) {
+  if (Number(a.lamport) !== Number(b.lamport) || Number(a.wallTimeMs) !== Number(b.wallTimeMs)) {
     return false;
   }
   const keysA = Object.keys(a.vectorClock);
   const keysB = Object.keys(b.vectorClock);
   const allKeys = new Set([...keysA, ...keysB]);
   for (const k of allKeys) {
-    const valA = a.vectorClock[k] ?? 0;
-    const valB = b.vectorClock[k] ?? 0;
+    const valA = Number(a.vectorClock[k] ?? 0);
+    const valB = Number(b.vectorClock[k] ?? 0);
     if (valA !== valB) return false;
   }
   return true;

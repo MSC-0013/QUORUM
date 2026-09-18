@@ -13,9 +13,10 @@ import { LocalNodeOperations } from './syncReplicationEngine.js';
 import { MembershipSnapshot } from '@quorum-lab/contracts';
 import {
   VersionedEntry,
-  KeyState,
   toVersionFrontier,
-  applyIncomingEntry
+  applyIncomingEntry,
+  satisfiesCausalDependency,
+  VersionFrontier
 } from '@quorum-lab/consistency';
 import { resolveLwwWinner } from './lwwResolver.js';
 
@@ -45,6 +46,18 @@ export class QuorumReadError extends Error {
     this.name = 'QuorumReadError';
     this.requiredAcks = requiredAcks;
     this.obtainedAcks = obtainedAcks;
+  }
+}
+
+export class CausalConsistencyError extends Error {
+  public readonly requiredDependency: Record<string, number>;
+  public readonly currentFrontier: VersionFrontier;
+
+  constructor(message: string, dependency: Record<string, number>, frontier: VersionFrontier) {
+    super(message);
+    this.name = 'CausalConsistencyError';
+    this.requiredDependency = dependency;
+    this.currentFrontier = frontier;
   }
 }
 
@@ -279,20 +292,26 @@ export class QuorumReplicationEngine implements ReplicationEngine {
     let mergedEntries = [...localRes.keyState.entries];
 
     const { R } = this.quorumConfig;
-    if (R <= 1) {
-      // R=1: Return local read resolved via LWW
-      const winner = resolveLwwWinner(mergedEntries);
-      const projectedState: KeyState = {
-        key: params.key,
-        entries: winner ? [winner] : []
-      };
+    const localFrontier = toVersionFrontier(localRes.keyState);
+    const satisfiesCausalLocally =
+      !params.causalDependency || satisfiesCausalDependency(localFrontier, params.causalDependency);
+
+    if (R <= 1 && satisfiesCausalLocally) {
+      // Local read satisfies causal dependency and quorum size requirement
+      let projectedEntries: readonly VersionedEntry[];
+      if (params.conflictStrategy === 'MULTI_VALUE' || params.conflictStrategy === 'VERSION_VECTOR') {
+        projectedEntries = mergedEntries;
+      } else {
+        const winner = resolveLwwWinner(mergedEntries);
+        projectedEntries = winner ? [winner] : [];
+      }
       return {
-        keyState: projectedState,
-        frontier: toVersionFrontier(localRes.keyState)
+        keyState: { key: params.key, entries: projectedEntries },
+        frontier: localFrontier
       };
     }
 
-    // Query peers to collect R responses
+    // Query peers to collect R responses (or to satisfy causal dependency)
     const membership = this.getMembership();
     const peers = membership.members.filter((id) => id !== this.localNodeId);
 
@@ -326,6 +345,13 @@ export class QuorumReplicationEngine implements ReplicationEngine {
       if (pResp && pResp.key_state && pResp.key_state.entries) {
         responsesCount++;
         for (const rawEntry of pResp.key_state.entries) {
+          const parsedVc: Record<string, number> = {};
+          if (rawEntry.version?.vector_clock?.entries) {
+            for (const [k, v] of Object.entries(rawEntry.version.vector_clock.entries)) {
+              parsedVc[k] = Number(v);
+            }
+          }
+
           const entry: VersionedEntry = {
             value: rawEntry.value && rawEntry.value.length > 0 ? new Uint8Array(rawEntry.value) : null,
             tombstone: Boolean(rawEntry.tombstone),
@@ -334,7 +360,7 @@ export class QuorumReplicationEngine implements ReplicationEngine {
                 nodeId: rawEntry.version.dot.node_id,
                 counter: Number(rawEntry.version.dot.counter)
               },
-              vectorClock: rawEntry.version.vector_clock?.entries ?? {},
+              vectorClock: parsedVc,
               lamport: Number(rawEntry.version.lamport),
               wallTimeMs: Number(rawEntry.version.wall_time_ms)
             }
@@ -352,16 +378,31 @@ export class QuorumReplicationEngine implements ReplicationEngine {
       );
     }
 
-    // Merge and project winner using LWW
-    const winner = resolveLwwWinner(mergedEntries);
-    const projectedState: KeyState = {
-      key: params.key,
-      entries: winner ? [winner] : []
-    };
+    const finalFrontier = toVersionFrontier({ key: params.key, entries: mergedEntries });
+
+    if (params.causalDependency && !satisfiesCausalDependency(finalFrontier, params.causalDependency)) {
+      throw new CausalConsistencyError(
+        `Causal dependency not satisfied for key ${params.key}`,
+        params.causalDependency,
+        finalFrontier
+      );
+    }
+
+    // Project entries according to conflict strategy
+    let projectedEntries: readonly VersionedEntry[];
+    if (params.conflictStrategy === 'MULTI_VALUE' || params.conflictStrategy === 'VERSION_VECTOR') {
+      projectedEntries = mergedEntries;
+    } else {
+      const winner = resolveLwwWinner(mergedEntries);
+      projectedEntries = winner ? [winner] : [];
+    }
 
     return {
-      keyState: projectedState,
-      frontier: toVersionFrontier({ key: params.key, entries: mergedEntries })
+      keyState: {
+        key: params.key,
+        entries: projectedEntries
+      },
+      frontier: finalFrontier
     };
   }
 
