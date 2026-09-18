@@ -19,6 +19,12 @@ import {
   VersionFrontier
 } from '@quorum-lab/consistency';
 import { resolveLwwWinner } from './lwwResolver.js';
+import {
+  ReadRepairCoordinator,
+  detectStaleReplicas,
+  ReplicaReadResult,
+  HintedHandoffManager
+} from '@quorum-lab/repair';
 
 export interface QuorumConfig {
   readonly W: number;
@@ -67,6 +73,8 @@ export class QuorumReplicationEngine implements ReplicationEngine {
   private readonly peerPool: PeerClientPool;
   private readonly getMembership: () => MembershipSnapshot;
   private readonly quorumConfig: QuorumConfig;
+  public readonly readRepairCoordinator?: ReadRepairCoordinator;
+  public readonly hintedHandoffManager?: HintedHandoffManager;
 
   constructor(params: {
     localNodeId: string;
@@ -74,12 +82,16 @@ export class QuorumReplicationEngine implements ReplicationEngine {
     peerPool: PeerClientPool;
     getMembership: () => MembershipSnapshot;
     quorumConfig: QuorumConfig;
+    readRepairCoordinator?: ReadRepairCoordinator;
+    hintedHandoffManager?: HintedHandoffManager;
   }) {
     this.localNodeId = params.localNodeId;
     this.localOps = params.localOps;
     this.peerPool = params.peerPool;
     this.getMembership = params.getMembership;
     this.quorumConfig = params.quorumConfig;
+    this.readRepairCoordinator = params.readRepairCoordinator;
+    this.hintedHandoffManager = params.hintedHandoffManager;
   }
 
   public getQuorumConfig(): QuorumConfig {
@@ -134,7 +146,27 @@ export class QuorumReplicationEngine implements ReplicationEngine {
           operationId: params.operationId,
           requestId: params.requestId,
           membership
-        }).catch(() => {});
+        }).then((pAck) => {
+          if (!pAck.replicaAcked && this.hintedHandoffManager) {
+            this.hintedHandoffManager.storeHint({
+              targetNodeId: peerId,
+              key: params.key,
+              entry,
+              operationId: params.operationId,
+              requestId: params.requestId
+            }).catch(() => {});
+          }
+        }).catch(() => {
+          if (this.hintedHandoffManager) {
+            this.hintedHandoffManager.storeHint({
+              targetNodeId: peerId,
+              key: params.key,
+              entry,
+              operationId: params.operationId,
+              requestId: params.requestId
+            }).catch(() => {});
+          }
+        });
       }
 
       return {
@@ -157,6 +189,34 @@ export class QuorumReplicationEngine implements ReplicationEngine {
         operationId: params.operationId,
         requestId: params.requestId,
         membership
+      }).then((pAck) => {
+        if (!pAck.replicaAcked && this.hintedHandoffManager) {
+          this.hintedHandoffManager.storeHint({
+            targetNodeId: peerId,
+            key: params.key,
+            entry,
+            operationId: params.operationId,
+            requestId: params.requestId
+          }).catch(() => {});
+        }
+        return pAck;
+      }).catch((err) => {
+        if (this.hintedHandoffManager) {
+          this.hintedHandoffManager.storeHint({
+            targetNodeId: peerId,
+            key: params.key,
+            entry,
+            operationId: params.operationId,
+            requestId: params.requestId
+          }).catch(() => {});
+        }
+        return {
+          nodeId: peerId,
+          replicaAcked: false,
+          durableAcked: false,
+          latencyMs: 0,
+          error: err?.message ?? 'Peer replication failed'
+        };
       })
     );
 
@@ -315,12 +375,16 @@ export class QuorumReplicationEngine implements ReplicationEngine {
     const membership = this.getMembership();
     const peers = membership.members.filter((id) => id !== this.localNodeId);
 
+    const replicaResponses: ReplicaReadResult[] = [
+      { nodeId: this.localNodeId, entries: localRes.keyState.entries }
+    ];
+
     const peerResults = await Promise.all(
       peers.map(async (peerId) => {
         const client = this.peerPool.getPeerClient(peerId);
-        if (!client) return null;
+        if (!client) return { peerId, resp: null };
 
-        return new Promise<any>((resolve) => {
+        return new Promise<{ peerId: string; resp: any }>((resolve) => {
           const metadata = new grpc.Metadata();
           metadata.set('x-internal-quorum-read', 'true');
 
@@ -330,9 +394,9 @@ export class QuorumReplicationEngine implements ReplicationEngine {
             { deadline: new Date(Date.now() + 3000) },
             (err: any, resp: any) => {
               if (err || !resp || !resp.key_state) {
-                resolve(null);
+                resolve({ peerId, resp: null });
               } else {
-                resolve(resp);
+                resolve({ peerId, resp });
               }
             }
           );
@@ -341,10 +405,11 @@ export class QuorumReplicationEngine implements ReplicationEngine {
     );
 
     let responsesCount = 1; // local node is 1
-    for (const pResp of peerResults) {
-      if (pResp && pResp.key_state && pResp.key_state.entries) {
+    for (const p of peerResults) {
+      if (p && p.resp && p.resp.key_state && p.resp.key_state.entries) {
         responsesCount++;
-        for (const rawEntry of pResp.key_state.entries) {
+        const parsedPeerEntries: VersionedEntry[] = [];
+        for (const rawEntry of p.resp.key_state.entries) {
           const parsedVc: Record<string, number> = {};
           if (rawEntry.version?.vector_clock?.entries) {
             for (const [k, v] of Object.entries(rawEntry.version.vector_clock.entries)) {
@@ -365,8 +430,10 @@ export class QuorumReplicationEngine implements ReplicationEngine {
               wallTimeMs: Number(rawEntry.version.wall_time_ms)
             }
           };
+          parsedPeerEntries.push(entry);
           mergedEntries = [...applyIncomingEntry(mergedEntries, entry)];
         }
+        replicaResponses.push({ nodeId: p.peerId, entries: parsedPeerEntries });
       }
     }
 
@@ -379,6 +446,21 @@ export class QuorumReplicationEngine implements ReplicationEngine {
     }
 
     const finalFrontier = toVersionFrontier({ key: params.key, entries: mergedEntries });
+
+    // Read Repair: Piggyback repair asynchronously on quorum read mismatches (§Q6)
+    if (this.readRepairCoordinator && R >= 2 && responsesCount >= 2) {
+      const staleNodeIds = detectStaleReplicas(replicaResponses, mergedEntries);
+      if (staleNodeIds.length > 0) {
+        this.readRepairCoordinator.executeReadRepairAsync({
+          key: params.key,
+          undominatedEntries: mergedEntries,
+          staleNodeIds,
+          coordinatorNodeId: this.localNodeId,
+          peerPool: this.peerPool,
+          membership
+        });
+      }
+    }
 
     if (params.causalDependency && !satisfiesCausalDependency(finalFrontier, params.causalDependency)) {
       throw new CausalConsistencyError(

@@ -25,6 +25,17 @@ import {
 import { MemStore } from './memStore.js';
 import { NodeRuntimeState } from '../runtime/nodeState.js';
 import { MutationExecutor } from './mutationExecutor.js';
+import {
+  MerkleTree,
+  buildMerkleTree,
+  BucketEntry,
+  HintedHandoffManager,
+  HintStore,
+  ReadRepairCoordinator,
+  sweepTombstones,
+  TombstoneGcSweepResult,
+  ReplicaObservedFrontier
+} from '@quorum-lab/repair';
 
 export interface NodeEnginePutResult {
   version: VersionStamp;
@@ -55,6 +66,8 @@ export class NodeEngine {
   public readonly storage: StorageEngine;
   public readonly mutationExecutor: MutationExecutor;
   public readonly peerPool: PeerClientPool;
+  public readonly hintedHandoff: HintedHandoffManager;
+  public readonly readRepair: ReadRepairCoordinator;
   public replicationEngine: ReplicationEngine | null = null;
 
   constructor(
@@ -74,6 +87,8 @@ export class NodeEngine {
       });
     this.mutationExecutor = new MutationExecutor(this.storage, this.store, this.runtime);
     this.peerPool = new PeerClientPool();
+    this.hintedHandoff = new HintedHandoffManager(new HintStore(this.storage));
+    this.readRepair = new ReadRepairCoordinator();
 
     this.initReplicationEngine(replicationMode, quorumConfig);
   }
@@ -146,7 +161,9 @@ export class NodeEngine {
         localOps,
         peerPool: this.peerPool,
         getMembership: () => this.runtime.getMembership(),
-        quorumConfig: quorumConfig ?? { W: 2, R: 2 }
+        quorumConfig: quorumConfig ?? { W: 2, R: 2 },
+        readRepairCoordinator: this.readRepair,
+        hintedHandoffManager: this.hintedHandoff
       });
     }
   }
@@ -348,6 +365,45 @@ export class NodeEngine {
       wallTimeMs: this.runtime.clocks.wall.nowMs(),
       walSequence: this.storage.getCurrentSequence()
     };
+  }
+
+  public buildMerkleTree(bucketCount = 16): MerkleTree {
+    const allKeys = this.store.getAllKeys();
+    const entries: BucketEntry[] = [];
+    for (const key of allKeys) {
+      const ks = this.store.get(key);
+      for (const entry of ks.entries) {
+        entries.push({
+          key,
+          version: entry.version,
+          tombstone: entry.tombstone,
+          value: entry.value
+        });
+      }
+    }
+    return buildMerkleTree(entries, bucketCount);
+  }
+
+  public sweepTombstones(params: {
+    replicaFrontiers: ReadonlyMap<string, ReplicaObservedFrontier>;
+    gcSafetyWindowMs?: number;
+    nowMs?: number;
+  }): TombstoneGcSweepResult {
+    return sweepTombstones(this.store, {
+      membership: this.runtime.getMembership(),
+      replicaFrontiers: params.replicaFrontiers,
+      gcSafetyWindowMs: params.gcSafetyWindowMs,
+      nowMs: params.nowMs
+    });
+  }
+
+  public async replayHintsForPeer(targetNodeId: string): Promise<{ replayed: number; failed: number }> {
+    return this.hintedHandoff.replayHintsForNode({
+      targetNodeId,
+      sourceNodeId: this.runtime.nodeId,
+      peerPool: this.peerPool,
+      membership: this.runtime.getMembership()
+    });
   }
 
   public async close(): Promise<void> {

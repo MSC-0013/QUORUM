@@ -214,9 +214,17 @@ describe('QuorumNode: gRPC NodeService & Health Integration Tests', () => {
     });
     expect(snapResult.status.code).toBe('STATUS_CODE_OK');
 
-    // Remaining future milestone RPCs (Q6 & Q8)
-    await testUnimplemented((cb) => nodeClient.ReadDigest({}, cb));
-    await testUnimplemented((cb) => nodeClient.Repair({}, cb));
+    // ReadDigest and Repair implemented in Q6
+    const digestResult: any = await new Promise((resolve, reject) => {
+      nodeClient.ReadDigest({ bucket_id: 0 }, (err: any, resp: any) => {
+        if (err) reject(err);
+        else resolve(resp);
+      });
+    });
+    expect(digestResult.bucket_id).toBe(0);
+    expect(digestResult.merkle_root_hash).toBeDefined();
+
+    // Remaining future milestone RPCs (Q8)
     await testUnimplemented((cb) => nodeClient.PrepareWrite({}, cb));
     await testUnimplemented((cb) => nodeClient.CommitWrite({}, cb));
   });

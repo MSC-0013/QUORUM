@@ -19,7 +19,9 @@ import {
   serializePutPayload,
   serializeDeletePayload,
   serializeSnapshotMarkerPayload,
-  serializeIdempotencyPayload
+  serializeIdempotencyPayload,
+  HintPayload,
+  serializeHintPayload
 } from './wal.js';
 
 // Re-export or import MemStore interface
@@ -236,6 +238,19 @@ export class StorageEngine {
     await this.log.append(encodeWalEnvelope(markerEnvelope), this.durabilityMode === 'SYNC_FSYNC');
 
     return result;
+  }
+
+  public async appendHint(payload: HintPayload): Promise<bigint> {
+    this.currentSequence += 1n;
+    const seq = this.currentSequence;
+    const envelope: WalRecordEnvelope = {
+      recordType: WalRecordType.HINT,
+      sequence: seq,
+      schemaVersion: 1,
+      payload: serializeHintPayload(payload)
+    };
+    await this.log.append(encodeWalEnvelope(envelope), this.durabilityMode === 'SYNC_FSYNC');
+    return seq;
   }
 
   public async close(): Promise<void> {

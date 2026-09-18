@@ -26,6 +26,7 @@
     "@quorum-lab/contracts": "workspace:*",
     "@quorum-lab/fault-model": "workspace:*",
     "@quorum-lab/protocol": "workspace:*",
+    "@quorum-lab/repair": "workspace:*",
     "@quorum-lab/replication": "workspace:*",
     "@quorum-lab/storage": "workspace:*",
     "dotenv": "^16.4.7"

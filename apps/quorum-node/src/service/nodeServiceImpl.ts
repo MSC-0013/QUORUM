@@ -376,23 +376,89 @@ export class NodeServiceImpl {
   };
 
   public readDigest = (
-    _call: grpc.ServerUnaryCall<any, any>,
+    call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
   ): void => {
-    callback({
-      code: grpc.status.UNIMPLEMENTED,
-      message: 'ReadDigest is not implemented in Milestone Q1 (scheduled for Q6)'
-    });
+    try {
+      const bucketId = Number(call.request?.bucket_id ?? 0);
+      const tree = this.engine.buildMerkleTree();
+      callback(null, {
+        bucket_id: bucketId,
+        merkle_root_hash: tree.getRootHash()
+      });
+    } catch (err: any) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: err?.message ?? 'Internal error during ReadDigest'
+      });
+    }
   };
 
-  public repair = (
-    _call: grpc.ServerUnaryCall<any, any>,
+  public repair = async (
+    call: grpc.ServerUnaryCall<any, any>,
     callback: grpc.sendUnaryData<any>
-  ): void => {
-    callback({
-      code: grpc.status.UNIMPLEMENTED,
-      message: 'Repair is not implemented in Milestone Q1 (scheduled for Q6)'
-    });
+  ): Promise<void> => {
+    try {
+      const { key, entry } = call.request;
+      if (!key || !entry || !entry.version) {
+        callback({
+          code: grpc.status.INVALID_ARGUMENT,
+          message: 'Valid key and entry with version required for Repair'
+        });
+        return;
+      }
+
+      const rawVal = entry.value;
+      const valueBytes = Buffer.isBuffer(rawVal)
+        ? new Uint8Array(rawVal)
+        : rawVal instanceof Uint8Array
+          ? rawVal
+          : rawVal && rawVal.length > 0
+            ? new Uint8Array(Buffer.from(rawVal))
+            : null;
+
+      const rawVc = entry.version.vector_clock?.entries ?? {};
+      const parsedVc: Record<string, number> = {};
+      for (const [k, v] of Object.entries(rawVc)) {
+        parsedVc[k] = Number(v);
+      }
+
+      const versionedEntry: VersionedEntry = {
+        value: valueBytes,
+        tombstone: Boolean(entry.tombstone),
+        version: {
+          dot: {
+            nodeId: entry.version.dot.node_id,
+            counter: Number(entry.version.dot.counter)
+          },
+          vectorClock: parsedVc,
+          lamport: Number(entry.version.lamport),
+          wallTimeMs: Number(entry.version.wall_time_ms)
+        }
+      };
+
+      const result = await this.engine.applyReplicatedEntry({
+        key,
+        entry: versionedEntry,
+        operationId: `repair-${Date.now()}`,
+        requestId: `req-repair-${Date.now()}`,
+        sourceNode: 'repair-coordinator',
+        membershipHash: this.engine.runtime.getMembership().hash,
+        fencingEpoch: 0
+      });
+
+      callback(null, {
+        status: {
+          code: result.status,
+          message: result.message ?? (result.status === ProtoStatusCode.STATUS_CODE_OK ? 'OK' : 'REJECTED')
+        }
+      });
+    } catch (err: any) {
+      callback({
+        code: grpc.status.INTERNAL,
+        message: err?.message ?? 'Internal error during Repair'
+      });
+    }
   };
 
   public prepareWrite = (

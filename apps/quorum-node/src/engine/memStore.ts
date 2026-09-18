@@ -99,11 +99,19 @@ export class MemStore {
     return toVersionFrontier(state);
   }
 
+  public set(keyState: KeyState): void {
+    this.store.set(keyState.key, keyState);
+  }
+
+  public deleteKey(key: string): void {
+    this.store.delete(key);
+  }
+
   public size(): number {
     return this.store.size;
   }
 
-  public getAllKeys(): readonly string[] {
+  public getAllKeys(): string[] {
     return Array.from(this.store.keys());
   }
 

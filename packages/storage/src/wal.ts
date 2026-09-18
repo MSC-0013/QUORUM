@@ -149,3 +149,45 @@ export function serializeIdempotencyPayload(record: IdempotencyRecord): Uint8Arr
 export function deserializeIdempotencyPayload(data: Uint8Array): IdempotencyRecord {
   return JSON.parse(Buffer.from(data).toString('utf8')) as IdempotencyRecord;
 }
+
+export interface HintPayload {
+  hintId: string;
+  targetNodeId: string;
+  key: string;
+  value: Uint8Array | null;
+  tombstone: boolean;
+  version: VersionStamp;
+  operationId: string;
+  requestId: string;
+  createdAtMs: number;
+}
+
+export function serializeHintPayload(payload: HintPayload): Uint8Array {
+  const json = JSON.stringify({
+    hintId: payload.hintId,
+    targetNodeId: payload.targetNodeId,
+    key: payload.key,
+    value: payload.value ? Buffer.from(payload.value).toString('base64') : null,
+    tombstone: payload.tombstone,
+    version: payload.version,
+    operationId: payload.operationId,
+    requestId: payload.requestId,
+    createdAtMs: payload.createdAtMs
+  });
+  return Buffer.from(json, 'utf8');
+}
+
+export function deserializeHintPayload(data: Uint8Array): HintPayload {
+  const parsed = JSON.parse(Buffer.from(data).toString('utf8'));
+  return {
+    hintId: parsed.hintId,
+    targetNodeId: parsed.targetNodeId,
+    key: parsed.key,
+    value: parsed.value ? new Uint8Array(Buffer.from(parsed.value, 'base64')) : null,
+    tombstone: Boolean(parsed.tombstone),
+    version: parsed.version,
+    operationId: parsed.operationId,
+    requestId: parsed.requestId,
+    createdAtMs: Number(parsed.createdAtMs)
+  };
+}

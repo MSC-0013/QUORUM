@@ -23,6 +23,7 @@
     "@quorum-lab/consistency": "workspace:*",
     "@quorum-lab/contracts": "workspace:*",
     "@quorum-lab/protocol": "workspace:*",
+    "@quorum-lab/repair": "workspace:*",
     "@quorum-lab/storage": "workspace:*"
   },
   "devDependencies": {
