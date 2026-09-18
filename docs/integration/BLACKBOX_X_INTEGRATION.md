@@ -1,176 +1,289 @@
-# BLACKBOX-X & QUORUM LAB — Dual-Engine Integration Guide
+# SYSTEM-X: BLACKBOX-X × QUORUM LAB Integration Architecture
 
-## 1. System Architecture: The Dual-Engine Philosophy
+## 1. Executive Mission & Core Invariant
 
-**BLACKBOX-X** and **QUORUM LAB** are designed as high-precision companion platforms that together solve the complete distributed systems evaluation puzzle:
+> **The Architectural Golden Rule**:
+> **Do NOT merge BLACKBOX-X and QUORUM LAB internally.**
+> Keep both platforms independently deployable, independently tested, and independently correct.
+> Connect them exclusively through a **dedicated, third architectural boundary**: the **SYSTEM-X Integration Layer**.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                             THE SISTER PLATFORMS                            │
-├──────────────────────────────────────┬──────────────────────────────────────┤
-│              BLACKBOX-X              │              QUORUM LAB              │
-│       Capacity & Performance         │       Consistency & Correctness      │
-├──────────────────────────────────────┼──────────────────────────────────────┤
-│ • "How does the system perform?"     │ • "What does it actually guarantee?" │
-│ • Discrete-event queueing simulation │ • 5-axis decoupled consistency model │
-│ • Microsecond virtual event calendar │ • Vector clocks & CRDT merges        │
-│ • Little's Law & bottleneck search   │ • Raft consensus & leader leases     │
-│ • Two-Sample KS & Wasserstein test   │ • Anti-entropy Merkle tree repair    │
-│ • Closed-loop model calibration      │ • Deterministic network chaos        │
-└──────────────────────────────────────┴──────────────────────────────────────┘
-```
-
-```mermaid
-flowchart TD
-    subgraph BLACKBOX_X ["BLACKBOX-X: Capacity & Simulation Engine"]
-        Topology["M1: Topology Graph\n(Services, DBs, Queues)"]
-        Simulator["M3: Discrete-Event Simulator\n(Virtual Clock & Calendar)"]
-        Driver["M4: Real Benchmark Driver\n(k6 / HTTP / gRPC Load Generator)"]
-        Comparator["M4: Statistical Comparator\n(KS-Test, Wasserstein, MAPE)"]
-        Calibrator["M6: Calibration Engine\n(Coordinate Descent Optimizer)"]
-    end
-
-    subgraph QUORUM_LAB ["QUORUM LAB: Distributed Consensus & Failure Lab"]
-        ControlAPI["Control API (Fastify REST :3000)\n(Clusters, Policies, Experiments)"]
-        NodeA["Quorum Node A (:50051)\n(KV WAL + Raft Log)"]
-        NodeB["Quorum Node B (:50052)\n(KV WAL + Raft Log)"]
-        NodeC["Quorum Node C (:50053)\n(KV WAL + Raft Log)"]
-        FaultInjector["Fault & Chaos Interceptors\n(Partitions, Delays, Clock Skew)"]
-    end
-
-    subgraph SHARED_INFRA ["Shared Infrastructure Spine"]
-        MySQL[("MySQL 8.4\n(Metadata & History)")]
-        Redis[("Redis 7.4/8.8\n(Locks, Leases, Live State)")]
-        Kafka[("Kafka 4.3 KRaft\n(Trace & Event Streaming)")]
-        MinIO[("MinIO S3\n(Snapshots & Artifacts)")]
-        Prometheus["Prometheus & OpenTelemetry\n(Metrics & Observability)"]
-    end
-
-    %% Wiring connections
-    Topology --> Simulator
-    Simulator -->|"Simulated Latency Distribution"| Comparator
-    Driver -->|"Real Load (gRPC / REST)"| NodeA
-    Driver -->|"Real Load (gRPC / REST)"| ControlAPI
-    NodeA <-->|"Replication & Consensus"| NodeB
-    NodeB <-->|"Replication & Consensus"| NodeC
-    FaultInjector -.->|"Inject Chaos at t=offset"| NodeA
-
-    NodeA -->|"Empirical Latencies & Divergence Traces"| Kafka
-    Kafka --> Driver
-    Driver -->|"Real Latency Distribution"| Comparator
-    Comparator -->|"Distribution Distance & Quantile Error"| Calibrator
-    Calibrator -->|"Calibrated Service Times & Queue Bounds"| Simulator
-
-    %% Infra ties
-    ControlAPI --- MySQL
-    ControlAPI --- Redis
-    NodeA --- MinIO
-    QUORUM_LAB --- Prometheus
-    BLACKBOX_X --- Prometheus
+```text
+                BLACKBOX-X
+        "What should happen?"
+                  │
+                  │ model
+                  ▼
+        simulation / prediction
+                  │
+                  │ predicted behavior
+                  ▼
+        ┌─────────────────────┐
+        │   SYSTEM-X BRIDGE   │
+        └─────────────────────┘
+                  │
+                  │ experiment + workload
+                  ▼
+              QUORUM LAB
+       "What actually happens?"
+                  │
+                  │ real distributed
+                  │ execution
+                  ▼
+       consistency / failures /
+       latency / throughput /
+       divergence / repair
+                  │
+                  ▼
+        empirical measurements
+                  │
+                  └───────────────┐
+                                  ▼
+                           BLACKBOX-X
+                         Compare → Calibrate
+                                  │
+                                  ▼
+                           Better model
 ```
 
 ---
 
-## 2. Shared Infrastructure Port Map
+## 2. Ownership & Responsibility Boundaries
 
-Both repositories share an identical enterprise tech spine (Node.js 24 LTS, TypeScript, Fastify, MySQL 8.4, Redis, Kafka, MinIO, Prometheus, Vitest). When running both systems concurrently, the port map is collision-free:
+Neither repository imports the other's internal classes, database tables, or private packages.
 
-| Component | Port | Protocol | Purpose |
-| :--- | :--- | :--- | :--- |
-| **MySQL 8.4** | `3308` (container) / `3306` (native) | TCP | Shared relational store (isolated databases `blackbox` and `quorum_lab`) |
-| **Redis** | `6380` (container) / `6379` (native) | TCP | Lease coordination, epoch authority, live worker locks |
-| **Kafka KRaft** | `9092` / `9094` | TCP | Event streaming (`quorum.replication.events`, `bbx.simulation.traces`) |
-| **MinIO S3** | `9000` (API), `9001` (Console) | HTTP | Object storage buckets: `blackbox-artifacts`, `quorum-snapshots` |
-| **Prometheus** | `9090` | HTTP | Metrics scraping from both platforms |
-| **QUORUM LAB Control API** | `3000` | HTTP / REST | Project, cluster, policy, experiment management |
-| **BLACKBOX-X Control API** | `3001` | HTTP / REST | Topology, simulation, calibration API |
-| **QUORUM Node A** | `50051` | gRPC | Quorum node 0 (NodeService, RaftService, FaultControlService) |
-| **QUORUM Node B** | `50052` | gRPC | Quorum node 1 |
-| **QUORUM Node C** | `50053` | gRPC | Quorum node 2 |
+| Responsibility | BLACKBOX-X | QUORUM LAB | SYSTEM-X Bridge |
+| :--- | :---: | :---: | :---: |
+| **Topology & Architecture DAG** | ✅ | | |
+| **Discrete-Event Queueing Simulation (DES)** | ✅ | | |
+| **Capacity Search & Bottleneck Attribution** | ✅ | | |
+| **Parameter Calibration (Coordinate Descent)** | ✅ | | |
+| **Statistical Model Comparison (KS / Wasserstein)** | ✅ | | |
+| **Replication Engines (Leaderless / Leader / Raft)** | | ✅ | |
+| **Consistency Models & Vector Clocks** | | ✅ | |
+| **Fault Injection into Real Nodes (Partitions, Delays)** | | ✅ | |
+| **Merkle Tree Anti-Entropy & Quorum Read Repair** | | ✅ | |
+| **Crash Recovery & StatefulSet Volume Preservation** | | ✅ | |
+| **Empirical Consistency Audit (Stale Read Rates)** | | ✅ | |
+| **Cross-Project Experiment Orchestration** | | | ✅ |
+| **Workload Compilation & Seed Derivation** | | | ✅ |
+| **Fault Schedule Translation** | | | ✅ |
+| **Metrics Normalization & Error Taxonomy Mapping** | | | ✅ |
+| **Immutable Trace Lineage in S3** | | | ✅ |
 
 ---
 
-## 3. The 4 Closed-Loop Integration Touchpoints
+## 3. Dedicated Repository & Directory Architecture
 
-### Touchpoint 1: Topology Modeling (BLACKBOX-X represents QUORUM LAB)
-In BLACKBOX-X (`packages/domain`), model the QUORUM LAB cluster as a multi-node topology:
-```json
-{
-  "topologyName": "quorum-lab-3node-cluster",
-  "nodes": [
-    { "id": "gateway", "kind": "SERVICE", "tier": "EDGE", "capacityRps": 20000 },
-    { "id": "node-a", "kind": "DATABASE", "tier": "STORAGE", "capacityRps": 8000 },
-    { "id": "node-b", "kind": "DATABASE", "tier": "STORAGE", "capacityRps": 8000 },
-    { "id": "node-c", "kind": "DATABASE", "tier": "STORAGE", "capacityRps": 8000 }
-  ],
-  "edges": [
-    { "source": "gateway", "target": "node-a", "kind": "SYNC_GRPC", "timeoutMs": 1000 },
-    { "source": "node-a", "target": "node-b", "kind": "SYNC_GRPC", "latencyUs": 1500 },
-    { "source": "node-a", "target": "node-c", "kind": "SYNC_GRPC", "latencyUs": 1500 }
-  ]
+```text
+/
+├── blackbox-x/                   # Autonomous simulation & capacity platform (M0–M12)
+│
+├── quorum-lab/                   # Distributed consensus & consistency lab (Q0–Q11)
+│
+└── system-x/                     # Third Independent Integration Layer (I0–I8)
+    ├── packages/
+    │   ├── integration-contracts/  # Pure TypeScript types & schemas (no backend dependencies)
+    │   ├── quorum-adapter/         # Client targeting Quorum Control API (REST) & Nodes (gRPC)
+    │   ├── blackbox-adapter/       # Client targeting Blackbox API (REST)
+    │   ├── workload-compiler/      # Translates Blackbox WorkloadSpec -> Quorum Workload
+    │   ├── fault-compiler/         # Translates Virtual Faults -> Quorum Fault Timelines
+    │   ├── result-normalizer/      # Maps latencies, throughput, and errors into MetricSample
+    │   └── artifact-linker/        # Writes SHA-256 verified trace lineage into MinIO S3
+    │
+    ├── apps/
+    │   └── integration-orchestrator/ # Fastify service executing closed-loop campaigns
+    │
+    ├── schemas/
+    │   ├── experiment.schema.json
+    │   ├── workload.schema.json
+    │   ├── fault.schema.json
+    │   └── result.schema.json
+    │
+    ├── scenarios/
+    │   ├── quorum-leaderless.yaml
+    │   ├── quorum-raft.yaml
+    │   ├── quorum-partition-chaos.yaml
+    │   └── quorum-hot-key-saturation.yaml
+    │
+    └── docs/
+        ├── ARCHITECTURE.md
+        ├── DATA_FLOW.md
+        ├── CONTRACTS.md
+        └── EXPERIMENTS.md
+```
+
+---
+
+## 4. Canonical Cross-System Contracts
+
+### 4.1. The Integrated Experiment Specification (`IntegratedExperiment`)
+```typescript
+export interface IntegratedExperiment {
+  readonly integrationRunId: string; // Global UUID v4 linking both systems
+
+  readonly blackbox: {
+    readonly projectId: string;
+    readonly topologyId: string;
+    readonly workloadId: string;
+    readonly simulationId?: string;
+  };
+
+  readonly quorum: {
+    readonly projectId: string;
+    readonly clusterId: string;
+    readonly policySnapshotId: string;
+  };
+
+  readonly workload: {
+    readonly operations: 'READ' | 'WRITE' | 'MIXED';
+    readonly readRatio: number;   // e.g. 0.90 for read-heavy
+    readonly writeRatio: number;  // e.g. 0.10
+    readonly keySpace: number;     // e.g. 10000
+    readonly distribution: 'UNIFORM' | 'ZIPFIAN';
+    readonly zipfTheta?: number;  // default 0.99
+    readonly concurrency: number; // e.g. 50 client workers
+    readonly warmupMs: number;    // e.g. 10000 ms
+    readonly measurementMs: number; // e.g. 60000 ms
+  };
+
+  readonly consistency: {
+    readonly replicationEngine: 'LEADERLESS' | 'LEADER' | 'RAFT';
+    readonly readConsistency: 'ONE' | 'QUORUM' | 'ALL' | 'SESSION' | 'CAUSAL';
+    readonly writeAckPolicy: 'ONE' | 'QUORUM' | 'ALL';
+    readonly durability: 'MEMORY_ONLY' | 'BATCHED_FSYNC' | 'SYNC_FSYNC';
+    readonly conflictStrategy: 'LAST_WRITE_WINS' | 'VERSION_VECTOR' | 'MULTI_VALUE';
+  };
+
+  readonly faults: IntegratedFaultSchedule[];
+
+  readonly slo: {
+    readonly targetP99Ms: number;
+    readonly maxErrorRate: number;
+  };
+
+  readonly seed: number; // Master seed
+}
+
+export interface IntegratedFaultSchedule {
+  readonly offsetMs: number;
+  readonly durationMs: number;
+  readonly faultType: 'PARTITION' | 'DELAY' | 'LOSS' | 'CLOCK_SKEW' | 'CRASH_RESTART';
+  readonly targetNodes: readonly string[];
+  readonly parameters?: Record<string, any>;
 }
 ```
 
-### Touchpoint 2: Load Injection (BLACKBOX-X benchmarks QUORUM LAB)
-BLACKBOX-X's real benchmark harness (`@blackbox-x/comparison`) targets QUORUM LAB nodes using open-loop workloads with configurable keyspace distributions (Zipfian $\theta=0.99$ or Uniform):
-- BLACKBOX-X fires concurrent requests ($100 \rightarrow 10,000$ RPS) against `node-a:50051`.
-- QUORUM LAB replicates mutations across `node-b` and `node-c` under the configured consistency policy (e.g. `RAFT` or `LEADERLESS Quorum W=2, R=2`).
+---
 
-### Touchpoint 3: Co-Orchestrated Chaos Timelines
-Simultaneous evaluation of **Queueing Degradation** and **Consistency Violations**:
-1. BLACKBOX-X ramps traffic to near-saturation (e.g. 5,000 RPS).
-2. QUORUM LAB's timeline runner (`@quorum-lab/timeline`) schedules a network partition cutting `node-a` at $t=15\text{s}$.
-3. Observations:
-   - **BLACKBOX-X measures**: Queue backlog, connection pooling saturation, p99 latency spike, Little's Law divergence.
-   - **QUORUM LAB measures**: Election term increment (Raft) or lease expiration and split-brain fencing (`STATUS_CODE_FENCED`), replica divergence, and subsequent Merkle repair convergence time.
+### 4.2. Normalized Metric Sample Schema (`MetricSample`)
+Every metric emitted preserves its origin `source` to prevent conflating simulation with empirical observations:
 
-### Touchpoint 4: Closed-Loop Calibration (Simulation Validation)
-1. **Simulate**: BLACKBOX-X simulates the predicted p50/p95/p99 latency for $W=2, R=2$ with 15ms simulated link delay.
-2. **Measure**: BLACKBOX-X benchmark driver runs against QUORUM LAB with 15ms injected delay via `@quorum-lab/fault-model`.
-3. **Compare**: The Statistical Comparator (`@blackbox-x/comparison`) computes the Two-Sample Kolmogorov-Smirnov test statistic ($D_{KS}$) and Wasserstein distance between the simulated curve and the real curve.
-4. **Calibrate**: BLACKBOX-X's coordinate descent optimizer adjusts service distribution parameters ($\mu, \sigma$) until $D_{KS} < 0.05$ (certified predictive accuracy).
+```typescript
+export interface MetricSample {
+  readonly integrationRunId: string;
+  readonly timestampUs: number;
+  readonly source:
+    | 'BLACKBOX_SIMULATION'
+    | 'BLACKBOX_REAL'
+    | 'QUORUM_NODE'
+    | 'QUORUM_CLIENT';
+
+  readonly metric:
+    | 'LATENCY'
+    | 'THROUGHPUT'
+    | 'ERROR_RATE'
+    | 'STALE_READ_RATE'
+    | 'REPLICA_LAG'
+    | 'QUEUE_DEPTH'
+    | 'CPU_UTILIZATION'
+    | 'CONNECTION_UTILIZATION'
+    | 'REPAIR_RATE';
+
+  readonly value: number;
+  readonly unit: 'us' | 'ms' | 'ops_s' | 'ratio' | 'percent' | 'count';
+  readonly tags?: Readonly<Record<string, string>>;
+}
+```
 
 ---
 
-## 4. Operator Runbook: Running the Platforms Together
+### 4.3. Semantic Outcome & Error Taxonomy Mapping
+Internal error codes from QUORUM LAB are translated into high-level comparative failure categories:
 
-### Phase 1: Launch Shared Infrastructure
-In `c:\MSC\Main project\BLACKBOX-X`:
-```bash
-# Start MySQL, Redis, Kafka, MinIO, Prometheus
-docker compose -f infrastructure/compose/docker-compose.yml --profile full up -d
+| Native QUORUM Error Code | Category in SYSTEM-X | Comparative System Implication |
+| :--- | :--- | :--- |
+| `STATUS_CODE_FENCED` | `LEADERSHIP_SAFETY_FAILURE` | Stale leader write fenced by higher epoch |
+| `NotLeaderError` | `ROUTING_RETRYABLE_FAILURE` | Client contacted follower in single-leader mode |
+| `UnsafeLeaderError` | `COORDINATION_LEASE_EXPIRED` | Leader lease expired during external authority blip |
+| `QuorumWriteError` | `WRITE_AVAILABILITY_FAILURE` | $W$ replica acks could not be gathered within timeout |
+| `CausalConsistencyError` | `CONSISTENCY_REQUIREMENT_FAILURE` | Client causal dependency frontier unsatisfied |
+| `STATUS_CODE_STALE_MEMBERSHIP` | `MEMBERSHIP_SAFETY_FAILURE` | Split-brain cluster configuration rejected |
+
+---
+
+## 5. The Deterministic Random Seed Derivation Rule
+
+Both systems are deterministic, but they do NOT share RNG implementations.
+A single master `experimentSeed` deterministically derives all sub-seeds using HMAC/SHA-256:
+
+$$\text{subSeed} = \text{uint32}\Big(\text{SHA-256}\big(\text{integrationRunId} + \text{masterSeed} + \text{streamName}\big)\Big)$$
+
+- `blackboxSeed` derived for virtual clock event calendar.
+- `quorumWorkloadSeed` derived for key generator (`UniformGenerator` / `ZipfianGenerator`).
+- `faultTimelineSeed` derived for failure injection jitter and node selection.
+
+---
+
+## 6. The Research Feedback Loop Walkthrough
+
+```
+  [1. MODEL]           [2. SIMULATE]             [3. COMPILE]              [4. EXECUTE]
+  BLACKBOX-X  ──────>  BLACKBOX-X  ───────────>  SYSTEM-X  ─────────────>  QUORUM LAB
+  Topology DAG         Virtual Event Engine      IntegratedExperiment      3-Node Real Cluster
+  Workload Spec        Predicts p50/p95/p99      Seed & Fault Compilation  Real Quorum Mutations
+                             │                                                   │
+                             ▼                                                   ▼
+                    Simulated Latencies                                 Empirical Latencies
+                             │                                                   │
+                             └─────────────────┬─────────────────────────────────┘
+                                               ▼
+                                         [5. COMPARE]
+                                     Statistical Engine
+                                    KS-Test & Wasserstein
+                                               │
+                                               ▼
+                                         [6. CALIBRATE]
+                                      Coordinate Descent
+                                  Tunes Service Distributions
+                                               │
+                                               ▼
+                                         [7. VALIDATE]
+                                      Held-out Validation
+                                   Certified System Model
 ```
 
-### Phase 2: Launch QUORUM LAB Cluster
-In `c:\MSC\Main project\QUORUM LAB`:
-```bash
-# Build monorepo packages
-npx pnpm build
+1. **Model (BLACKBOX-X)**: User defines multi-tier topology graph representing client, gateway, and $N$ database replica nodes.
+2. **Simulate (BLACKBOX-X)**: Discrete-event engine predicts throughput, p50, p95, p99 latencies, and queue depths under nominal and degraded states.
+3. **Compile (SYSTEM-X)**: `WorkloadCompiler` and `FaultCompiler` generate the matching QUORUM LAB policy and execution plan.
+4. **Execute (QUORUM LAB)**: Real cluster executes under live traffic with actual network faults injected at exact timeline offsets.
+5. **Compare (SYSTEM-X / BLACKBOX-X)**: The Statistical Comparator runs the Two-Sample Kolmogorov-Smirnov test ($D_{KS}$) and Wasserstein distance between the simulated latency distribution and the empirical latency distribution.
+6. **Calibrate (BLACKBOX-X)**: Coordinate-descent optimizer tunes simulated resource service times and queue capacities to minimize $D_{KS}$.
+7. **Validate (SYSTEM-X)**: A held-out scenario is executed; if $D_{KS} \le 0.05$, the simulation model is formally certified as predictive.
 
-# Start 3-node cluster with Raft or Quorum replication
-# Terminal 1: Node A
-QUORUM_NODE_ID=node-a QUORUM_GRPC_PORT=50051 QUORUM_CLUSTER_MEMBERS=node-a,node-b,node-c npx tsx apps/quorum-node/src/main.ts
+---
 
-# Terminal 2: Node B
-QUORUM_NODE_ID=node-b QUORUM_GRPC_PORT=50052 QUORUM_CLUSTER_MEMBERS=node-a,node-b,node-c npx tsx apps/quorum-node/src/main.ts
+## 7. The SYSTEM-X Integration Roadmap (I0–I8)
 
-# Terminal 3: Node C
-QUORUM_NODE_ID=node-c QUORUM_GRPC_PORT=50053 QUORUM_CLUSTER_MEMBERS=node-a,node-b,node-c npx tsx apps/quorum-node/src/main.ts
+To complete the cross-system integration without reopening completed milestones:
 
-# Terminal 4: Control API
-npx tsx apps/control-api/src/main.ts
-```
-
-### Phase 3: Launch BLACKBOX-X & Execute End-to-End Campaign
-In `c:\MSC\Main project\BLACKBOX-X`:
-```bash
-# Execute simulation against the modeled Quorum Lab cluster
-npx tsx apps/api/src/main.ts
-
-# Run the real comparison gate targeting Quorum Lab
-npx vitest run tests/gates/m4.gate.test.ts
-```
-
-### Phase 4: Inspect Unified Insights
-- **BLACKBOX-X Dashboard (`http://localhost:3001`)**: View capacity limits, bottleneck ranking, queue wait-times, and KS goodness-of-fit.
-- **QUORUM LAB Control Plane (`http://localhost:3000`)**: View replica version frontiers, vector clock states, repair counts, and linearizability audit results.
+| Milestone | Title | Scope & Key Deliverables |
+| :--- | :--- | :--- |
+| **I0** | Integration Foundation | `integration-contracts`, schemas (`experiment`, `workload`, `fault`, `result`), `integrationRunId`. |
+| **I1** | QUORUM Target Adapter | REST client for Control API (`/v1/clusters`, `/policies`, `/runs`) & gRPC client for nodes. |
+| **I2** | Workload Bridge | Compilation from Blackbox `WorkloadSpec` to Quorum `BenchmarkRunner` with SHA-256 derived seeds. |
+| **I3** | Fault Bridge | Bi-directional translation between Blackbox virtual chaos and Quorum `FaultControlService`. |
+| **I4** | Result Bridge & Normalization | Unified `MetricSample` streaming, error taxonomy mapping, and divergence metric collection. |
+| **I5** | Simulation ↔ Real Comparison | Automated execution of Simulate $\rightarrow$ Measure $\rightarrow$ KS / Wasserstein statistical distance. |
+| **I6** | Closed-Loop Calibration Loop | Real Quorum observations feed Blackbox optimizer to tune simulation parameters. |
+| **I7** | Research Campaign Engine | Multi-dimensional Cartesian sweep across replication engines $\times$ consistency $\times$ faults. |
+| **I8** | Integrated Certification Gate | End-to-end certification gate producing immutable S3 trace checkpoints with SHA-256 checksums. |
