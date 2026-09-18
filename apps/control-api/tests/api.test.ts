@@ -121,26 +121,58 @@ describe('Control API - Endpoints CRUD & Experiment Lifecyle', () => {
     expect(run.clusterPolicySnapshot.readConsistency.mode).toBe('ONE');
     expect(run.membershipSnapshot.members).toEqual(['node-1', 'node-2', 'node-3']);
 
-    // 7. Update run status by worker
+    // 7. Test execute run idempotency and state transition
+    const execRes1 = await app.inject({
+      method: 'POST',
+      url: `/v1/runs/${run.id}/execute`,
+      headers: { 'idempotency-key': 'exec-test-key-1' },
+      payload: {
+        executionId: 'exec-test-1',
+        artifact: {
+          uri: 'minio://artifacts/traces/test.json',
+          sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          mediaType: 'application/json'
+        },
+        options: { durationMs: 10000, concurrency: 4 }
+      }
+    });
+    expect(execRes1.statusCode).toBe(202);
+    const execRun1 = JSON.parse(execRes1.body);
+    expect(execRun1.status).toBe('EXECUTION_REQUESTED');
+    expect(execRun1.executionId).toBe('exec-test-1');
+    expect(execRun1.artifact.uri).toBe('minio://artifacts/traces/test.json');
+
+    // Idempotent retry with same idempotency key must succeed and return same run
+    const execRes2 = await app.inject({
+      method: 'POST',
+      url: `/v1/runs/${run.id}/execute`,
+      headers: { 'idempotency-key': 'exec-test-key-1' },
+      payload: { executionId: 'exec-test-1' }
+    });
+    expect(execRes2.statusCode).toBe(202);
+    expect(JSON.parse(execRes2.body).status).toBe('EXECUTION_REQUESTED');
+
+    // 8. Update run status to RUNNING by worker
     const patchRes = await app.inject({
       method: 'PATCH',
       url: `/v1/runs/${run.id}`,
       payload: {
-        status: 'COMPLETED',
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        result: {
-          totalOperations: 500,
-          successfulOperations: 480,
-          failedOperations: 20,
-          divergenceDetected: false,
-          anomaliesFound: []
-        }
+        status: 'RUNNING',
+        startedAt: new Date().toISOString()
       }
     });
     expect(patchRes.statusCode).toBe(200);
-    const completedRun = JSON.parse(patchRes.body);
-    expect(completedRun.status).toBe('COMPLETED');
-    expect(completedRun.result.divergenceDetected).toBe(false);
+    expect(JSON.parse(patchRes.body).status).toBe('RUNNING');
+
+    // 9. Cancel run
+    const cancelRes = await app.inject({
+      method: 'POST',
+      url: `/v1/runs/${run.id}/cancel`,
+      payload: { reason: 'User requested abort' }
+    });
+    expect(cancelRes.statusCode).toBe(200);
+    const cancelledRun = JSON.parse(cancelRes.body);
+    expect(cancelledRun.status).toBe('CANCELLED');
+    expect(cancelledRun.cancelReason).toBe('User requested abort');
   });
 });

@@ -1,6 +1,13 @@
 import { ClusterPolicyConfig, MembershipSnapshot } from '@quorum-lab/contracts';
 
-export type ExperimentRunStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'ABORTED';
+export type ExperimentRunStatus =
+  | 'QUEUED'
+  | 'EXECUTION_REQUESTED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'ABORTED'
+  | 'CANCELLED';
 
 export interface ExperimentFaultEvent {
   readonly offsetMs: number;
@@ -36,6 +43,14 @@ export interface ExperimentRunRecord {
   readonly rootSeed: string;
   readonly clusterPolicySnapshot: ClusterPolicyConfig;
   readonly membershipSnapshot: MembershipSnapshot;
+  readonly executionId?: string;
+  readonly idempotencyKey?: string;
+  readonly artifact?: {
+    readonly uri: string;
+    readonly sha256: string;
+    readonly mediaType: string;
+  };
+  readonly cancelReason?: string;
   readonly startedAt?: string;
   readonly completedAt?: string;
   readonly result?: {
@@ -142,6 +157,75 @@ export class ExperimentRepository {
       startedAt: extra?.startedAt ?? existing.startedAt,
       completedAt: extra?.completedAt ?? existing.completedAt,
       result: extra?.result ?? existing.result
+    };
+
+    this.runs.set(runId, Object.freeze(updated));
+    return updated;
+  }
+
+  public requestRunExecution(
+    runId: string,
+    params: {
+      executionId: string;
+      idempotencyKey?: string;
+      artifact?: {
+        readonly uri: string;
+        readonly sha256: string;
+        readonly mediaType: string;
+      };
+      seed?: number;
+      options?: {
+        durationMs?: number;
+        concurrency?: number;
+      };
+    }
+  ): ExperimentRunRecord {
+    const existing = this.runs.get(runId);
+    if (!existing) {
+      throw new Error(`Experiment run ${runId} not found`);
+    }
+
+    const key = params.idempotencyKey ?? params.executionId;
+
+    // Idempotency: if already requested or running with matching execution key, return existing
+    if (existing.status === 'EXECUTION_REQUESTED' || existing.status === 'RUNNING') {
+      if (existing.executionId === params.executionId || existing.idempotencyKey === key) {
+        return existing;
+      }
+      throw new Error(`Conflict: Run ${runId} is already active under execution ${existing.executionId}`);
+    }
+
+    if (existing.status !== 'QUEUED') {
+      throw new Error(`Cannot execute run ${runId} in status ${existing.status}`);
+    }
+
+    const updated: ExperimentRunRecord = {
+      ...existing,
+      status: 'EXECUTION_REQUESTED',
+      executionId: params.executionId,
+      idempotencyKey: key,
+      artifact: params.artifact ? Object.freeze({ ...params.artifact }) : undefined
+    };
+
+    this.runs.set(runId, Object.freeze(updated));
+    return updated;
+  }
+
+  public cancelRun(runId: string, reason?: string): ExperimentRunRecord {
+    const existing = this.runs.get(runId);
+    if (!existing) {
+      throw new Error(`Experiment run ${runId} not found`);
+    }
+
+    if (['COMPLETED', 'FAILED', 'ABORTED', 'CANCELLED'].includes(existing.status)) {
+      throw new Error(`Cannot cancel run ${runId} in terminal status ${existing.status}`);
+    }
+
+    const updated: ExperimentRunRecord = {
+      ...existing,
+      status: 'CANCELLED',
+      cancelReason: reason ?? 'Cancelled by client request',
+      completedAt: new Date().toISOString()
     };
 
     this.runs.set(runId, Object.freeze(updated));

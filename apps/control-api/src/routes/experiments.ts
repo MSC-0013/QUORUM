@@ -136,7 +136,7 @@ export const experimentRoutes: FastifyPluginAsync<ExperimentRouteOptions> = asyn
     }
 
     try {
-      const updated = experimentRepo.updateRunStatus(runId, body.status, {
+      const updated = experimentRepo.updateRunStatus(runId, body.status as any, {
         startedAt: body.startedAt,
         completedAt: body.completedAt,
         result: body.result
@@ -144,6 +144,65 @@ export const experimentRoutes: FastifyPluginAsync<ExperimentRouteOptions> = asyn
       return reply.send(updated);
     } catch (err: any) {
       return reply.status(404).send({ error: err.message });
+    }
+  });
+
+  // POST /v1/runs/:runId/execute (idempotent run execution dispatch)
+  fastify.post('/v1/runs/:runId/execute', async (request, reply) => {
+    const { runId } = request.params as { runId: string };
+    const idempotencyHeader = request.headers['idempotency-key'] as string | undefined;
+    const body = (request.body ?? {}) as {
+      executionId?: string;
+      artifact?: {
+        uri: string;
+        sha256: string;
+        mediaType: string;
+      };
+      seed?: number;
+      options?: {
+        durationMs?: number;
+        concurrency?: number;
+      };
+    };
+
+    const executionId = body.executionId ?? idempotencyHeader ?? `exec-${Date.now()}`;
+
+    try {
+      const updated = experimentRepo.requestRunExecution(runId, {
+        executionId,
+        idempotencyKey: idempotencyHeader ?? executionId,
+        artifact: body.artifact,
+        seed: body.seed,
+        options: body.options
+      });
+      return reply.status(202).send(updated);
+    } catch (err: any) {
+      if (err.message.includes('not found')) {
+        return reply.status(404).send({ error: err.message });
+      }
+      if (err.message.includes('Conflict')) {
+        return reply.status(409).send({ error: err.message });
+      }
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // POST /v1/runs/:runId/cancel (safe run cancellation)
+  fastify.post('/v1/runs/:runId/cancel', async (request, reply) => {
+    const { runId } = request.params as { runId: string };
+    const body = (request.body ?? {}) as { reason?: string };
+
+    try {
+      const cancelled = experimentRepo.cancelRun(runId, body.reason);
+      return reply.status(200).send(cancelled);
+    } catch (err: any) {
+      if (err.message.includes('not found')) {
+        return reply.status(404).send({ error: err.message });
+      }
+      if (err.message.includes('terminal status')) {
+        return reply.status(409).send({ error: err.message });
+      }
+      return reply.status(400).send({ error: err.message });
     }
   });
 };
