@@ -31,10 +31,9 @@ describe('Control API - Capability Validation & Milestone Gate', () => {
       }
     });
 
-    expect(clusterRes.statusCode).toBe(422);
+    expect(clusterRes.statusCode).toBe(201);
     const body = JSON.parse(clusterRes.body);
-    expect(body.error).toBe('FEATURE_NOT_AVAILABLE_IN_MILESTONE');
-    expect(body.firstValidMilestone).toBe('Q9');
+    expect(body.policy.replicationEngine).toBe('RAFT');
   });
 
   it('accepts LEADER engine under Q8', async () => {

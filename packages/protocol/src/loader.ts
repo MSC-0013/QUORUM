@@ -92,3 +92,27 @@ export function getFaultControlServiceDefinition(): grpc.ServiceDefinition {
   };
   return loaded.quorum.fault.v1.FaultControlService.service;
 }
+
+export function getRaftServiceDefinition(): grpc.ServiceDefinition {
+  const protoPath = path.join(PROTO_DIR, 'raft.proto');
+  const packageDefinition = protoLoader.loadSync(protoPath, {
+    keepCase: true,
+    longs: String,
+    enums: String,
+    defaults: true,
+    oneofs: true,
+    includeDirs: [PROTO_DIR]
+  });
+  const loaded = grpc.loadPackageDefinition(packageDefinition) as unknown as {
+    quorum: {
+      raft: {
+        v1: {
+          RaftService: {
+            service: grpc.ServiceDefinition;
+          };
+        };
+      };
+    };
+  };
+  return loaded.quorum.raft.v1.RaftService.service;
+}

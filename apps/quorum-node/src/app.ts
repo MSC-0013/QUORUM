@@ -3,7 +3,8 @@ import { AppConfig, createMembershipSnapshot } from '@quorum-lab/contracts';
 import {
   getNodeServiceDefinition,
   getHealthServiceDefinition,
-  getFaultControlServiceDefinition
+  getFaultControlServiceDefinition,
+  getRaftServiceDefinition
 } from '@quorum-lab/protocol';
 import { StorageEngine } from '@quorum-lab/storage';
 import { FaultRegistry } from '@quorum-lab/fault-model';
@@ -15,10 +16,11 @@ import { NodeEngine } from './engine/nodeEngine.js';
 import { NodeServiceImpl } from './service/nodeServiceImpl.js';
 import { HealthServiceImpl } from './service/healthServiceImpl.js';
 import { FaultControlServiceImpl } from './service/faultControlServiceImpl.js';
+import { RaftServiceImpl } from './service/raftServiceImpl.js';
 
 import { LocalDurabilityMode } from '@quorum-lab/storage';
 import { ReplicationMode } from './engine/nodeEngine.js';
-import { QuorumConfig } from '@quorum-lab/replication';
+import { QuorumConfig, RaftRole } from '@quorum-lab/replication';
 
 export interface QuorumNodeAppOptions {
   durabilityMode?: LocalDurabilityMode;
@@ -28,6 +30,11 @@ export interface QuorumNodeAppOptions {
     initialLeaderId?: string;
     initialEpoch?: number;
     leaseDurationMs?: number;
+  };
+  raftConfig?: {
+    initialTerm?: number;
+    initialRole?: RaftRole;
+    initialLeaderId?: string;
   };
 }
 
@@ -73,7 +80,8 @@ export class QuorumNodeApp {
       this.store,
       options?.replicationMode ?? 'NONE',
       options?.quorumConfig,
-      options?.leaderConfig
+      options?.leaderConfig,
+      options?.raftConfig
     );
 
     // Wire network fault interceptor into peer client pool
@@ -113,6 +121,10 @@ export class QuorumNodeApp {
       this.clocks
     );
     this.server.addService(faultServiceDef, faultServiceImpl.getServiceImplementation());
+
+    const raftServiceDef = getRaftServiceDefinition();
+    const raftServiceImpl = new RaftServiceImpl(this.engine.raftNode);
+    this.server.addService(raftServiceDef, raftServiceImpl.getServiceImplementation());
   }
 
   public async start(): Promise<number> {

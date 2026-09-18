@@ -20,6 +20,11 @@ import {
   QuorumReplicationEngine,
   LeaderReplicationEngine,
   FencingCoordinator,
+  RaftNode,
+  RaftReplicationEngine,
+  RaftLogEntry,
+  RaftCommandPayload,
+  RaftRole,
   QuorumConfig,
   PeerClientPool,
   ReplicationResult
@@ -60,7 +65,7 @@ export interface NodeEngineGetResult {
   frontier: VersionFrontier;
 }
 
-export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC' | 'QUORUM' | 'LEADER';
+export type ReplicationMode = 'NONE' | 'SYNC' | 'ASYNC' | 'QUORUM' | 'LEADER' | 'RAFT';
 
 export class NodeEngine {
   public readonly store: MemStore;
@@ -71,6 +76,7 @@ export class NodeEngine {
   public readonly hintedHandoff: HintedHandoffManager;
   public readonly readRepair: ReadRepairCoordinator;
   public readonly fencingCoordinator: FencingCoordinator;
+  public readonly raftNode: RaftNode;
   private readonly preparedWrites: Map<string, {
     key: string;
     value: Uint8Array;
@@ -86,7 +92,8 @@ export class NodeEngine {
     store?: MemStore,
     replicationMode: ReplicationMode = 'NONE',
     quorumConfig?: QuorumConfig,
-    leaderConfig?: { initialLeaderId?: string; initialEpoch?: number; leaseDurationMs?: number }
+    leaderConfig?: { initialLeaderId?: string; initialEpoch?: number; leaseDurationMs?: number },
+    raftConfig?: { initialTerm?: number; initialRole?: RaftRole; initialLeaderId?: string }
   ) {
     this.runtime = runtime;
     this.store = store ?? new MemStore();
@@ -104,6 +111,39 @@ export class NodeEngine {
       initialLeaderId: leaderConfig?.initialLeaderId,
       initialEpoch: leaderConfig?.initialEpoch ?? 1,
       leaseDurationMs: leaderConfig?.leaseDurationMs ?? 5000
+    });
+
+    this.raftNode = new RaftNode({
+      localNodeId: this.runtime.nodeId,
+      peers: this.runtime.getMembership().members.filter((id) => id !== this.runtime.nodeId),
+      peerPool: this.peerPool,
+      initialTerm: raftConfig?.initialTerm,
+      initialRole: raftConfig?.initialRole,
+      initialLeaderId: raftConfig?.initialLeaderId,
+      onApply: async (entry: RaftLogEntry) => {
+        const cmd = JSON.parse(Buffer.from(entry.data).toString('utf8')) as RaftCommandPayload;
+        if (cmd.type === 'PUT') {
+          return this.mutationExecutor.execute({
+            recordType: WalRecordType.PUT,
+            key: cmd.key,
+            value: cmd.value ? new Uint8Array(cmd.value) : new Uint8Array(),
+            clientId: cmd.clientId,
+            requestId: cmd.requestId,
+            operationId: cmd.operationId,
+            runId: cmd.runId
+          });
+        } else if (cmd.type === 'DELETE') {
+          return this.mutationExecutor.execute({
+            recordType: WalRecordType.DELETE,
+            key: cmd.key,
+            clientId: cmd.clientId,
+            requestId: cmd.requestId,
+            operationId: cmd.operationId,
+            runId: cmd.runId
+          });
+        }
+        return undefined;
+      }
     });
 
     this.initReplicationEngine(replicationMode, quorumConfig);
@@ -189,6 +229,12 @@ export class NodeEngine {
         getMembership: () => this.runtime.getMembership(),
         fencingCoordinator: this.fencingCoordinator,
         quorumConfig: quorumConfig ?? { W: 2, R: 1 }
+      });
+    } else if (mode === 'RAFT') {
+      this.replicationEngine = new RaftReplicationEngine({
+        localNodeId: this.runtime.nodeId,
+        raftNode: this.raftNode,
+        localOps
       });
     }
   }

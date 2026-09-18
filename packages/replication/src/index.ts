@@ -6,3 +6,6 @@ export * from './lwwResolver.js';
 export * from './quorumReplicationEngine.js';
 export * from './sessionRouter.js';
 export * from './leaderReplicationEngine.js';
+export * from './raftLog.js';
+export * from './raftNode.js';
+export * from './raftReplicationEngine.js';
