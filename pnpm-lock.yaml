@@ -296,6 +296,34 @@ importers:
         specifier: ^3.0.7
         version: 3.2.7(@types/node@24.13.5)
 
+  packages/benchmarks:
+    dependencies:
+      '@quorum-lab/clocks':
+        specifier: workspace:*
+        version: link:../clocks
+      '@quorum-lab/consistency':
+        specifier: workspace:*
+        version: link:../consistency
+      '@quorum-lab/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@quorum-lab/replication':
+        specifier: workspace:*
+        version: link:../replication
+      '@quorum-lab/storage':
+        specifier: workspace:*
+        version: link:../storage
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@24.13.5)
+
   packages/clocks:
     devDependencies:
       '@types/node':

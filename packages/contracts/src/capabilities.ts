@@ -78,8 +78,8 @@ export class CapabilityMilestoneError extends Error {
  */
 export function assertFeatureAvailableInMilestone(
   featureKey: string,
-  currentMilestoneNumber = 10,
-  currentMilestoneName = 'Q10'
+  currentMilestoneNumber = 11,
+  currentMilestoneName = 'Q11'
 ): void {
   const requirement = CAPABILITY_MILESTONES[featureKey];
   if (!requirement) {
