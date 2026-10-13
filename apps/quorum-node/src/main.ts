@@ -7,7 +7,7 @@ async function main(): Promise<void> {
   const app = new QuorumNodeApp(config);
 
   const httpPort = parseInt(process.env['PORT'] ?? process.env['HTTP_PORT'] ?? '8080', 10);
-  const httpServer = http.createServer((req, res) => {
+  const httpServer = http.createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -16,7 +16,7 @@ async function main(): Promise<void> {
         nodeId: config.node.id,
         clusterId: config.node.clusterId,
         state: app.lifecycle.getState(),
-        grpcPort: config.node.port,
+        grpcPort: config.node.grpcPort,
         httpPort,
         replication: 'Leaderless Dynamo-style (W=2, R=2, N=3)',
         durability: 'WAL fsync + MemStore',
