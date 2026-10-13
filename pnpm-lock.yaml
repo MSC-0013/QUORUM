@@ -179,6 +179,34 @@ importers:
         specifier: ^3.0.7
         version: 3.2.7(@types/node@24.13.5)
 
+  apps/analysis-worker:
+    dependencies:
+      '@quorum-lab/clocks':
+        specifier: workspace:*
+        version: link:../../packages/clocks
+      '@quorum-lab/consistency':
+        specifier: workspace:*
+        version: link:../../packages/consistency
+      '@quorum-lab/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@quorum-lab/fault-model':
+        specifier: workspace:*
+        version: link:../../packages/fault-model
+      '@quorum-lab/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@24.13.5)
+
   apps/control-api:
     dependencies:
       '@fastify/cors':
@@ -285,6 +313,28 @@ importers:
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@24.13.5)
+
+  apps/report-worker:
+    dependencies:
+      '@quorum-lab/analysis-worker':
+        specifier: workspace:*
+        version: link:../analysis-worker
+      '@quorum-lab/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@quorum-lab/fault-model':
+        specifier: workspace:*
+        version: link:../../packages/fault-model
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

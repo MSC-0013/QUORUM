@@ -5,7 +5,7 @@ export interface ControlApiConfig {
 
 export function loadControlApiConfig(): ControlApiConfig {
   return {
-    port: parseInt(process.env['CONTROL_API_PORT'] ?? '8000', 10),
+    port: parseInt(process.env['PORT'] ?? process.env['CONTROL_API_PORT'] ?? '8000', 10),
     host: process.env['CONTROL_API_HOST'] ?? '0.0.0.0'
   };
 }
