@@ -4,7 +4,7 @@ RUN npm install -g pnpm@12
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
 COPY . .
 RUN pnpm install --no-frozen-lockfile
-RUN pnpm --filter @quorum-lab/control-api build
+RUN pnpm --filter @quorum-lab/control-api... build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
