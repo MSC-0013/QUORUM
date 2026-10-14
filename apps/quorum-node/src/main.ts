@@ -198,6 +198,71 @@ function renderQuorumDashboard(nodeId: string, clusterId: string, nodeState: str
       </div>
     </div>
 
+    <!-- Verification & Ecosystem Bridge Banner -->
+    <div class="card" style="margin-bottom: 24px; border-color: rgba(16, 185, 129, 0.4); background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(17, 24, 39, 1) 100%);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <h2 style="font-size: 17px; margin-bottom: 4px; color: #34d399;">Closed-Loop Distributed System Verification Role</h2>
+          <p style="color: #cbd5e1; font-size: 13px;">QUORUM LAB is the sovereign distributed consensus cluster node (Dynamo-style W=2, R=2, WAL fsync, vector clocks). It provides the empirical ground-truth telemetry under real network partitions and node crashes for SYSTEM-X closed-loop certification.</p>
+        </div>
+        <div>
+          <a class="link-btn" href="https://system-x-dashboard.onrender.com" target="_blank" style="background: #059669; color: #fff; font-weight: 700; padding: 10px 18px; border: none;">
+            &#128640; Launch SYSTEM-X Master Portal &rarr;
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5-Axis Decoupled Consensus Architecture Matrix -->
+    <div class="card" style="margin-bottom: 24px;">
+      <h2 style="font-size: 16px; margin-bottom: 6px;">5-Axis Decoupled Consensus & Storage Architecture</h2>
+      <p style="color: var(--muted); font-size: 13px; margin-bottom: 14px;">Quorum Lab decouples consensus into 5 independent axes for production resilience:</p>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--muted);">
+              <th style="padding: 8px;">Architecture Axis</th>
+              <th style="padding: 8px;">Implementation</th>
+              <th style="padding: 8px;">Guarantees & Invariants</th>
+              <th style="padding: 8px;">Fault Tolerance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 8px; font-weight: 700; color: #60a5fa;">1. Replication Topology</td>
+              <td style="padding: 8px;">Leaderless Dynamo (N=3, W=2, R=2)</td>
+              <td style="padding: 8px; color: #34d399;">W + R &gt; N (4 &gt; 3) Quorum Overlap</td>
+              <td style="padding: 8px;">Survives 1 concurrent node failure</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 8px; font-weight: 700; color: #60a5fa;">2. Storage Engine</td>
+              <td style="padding: 8px;">Sequential WAL fsync + MemStore</td>
+              <td style="padding: 8px; color: #34d399;">AOF Append-Only Log with Zero Lost Writes</td>
+              <td style="padding: 8px;">Instant crash-replay recovery</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 8px; font-weight: 700; color: #60a5fa;">3. Causality Tracking</td>
+              <td style="padding: 8px;">Vector Clocks & Version Dots</td>
+              <td style="padding: 8px; color: #34d399;">Causal Partial-Order Happened-Before</td>
+              <td style="padding: 8px;">Last-Write-Wins (LWW) conflict tie-break</td>
+            </tr>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 8px; font-weight: 700; color: #60a5fa;">4. Cluster Transport</td>
+              <td style="padding: 8px;">High-Throughput gRPC (:50051)</td>
+              <td style="padding: 8px; color: #34d399;">HTTP/2 Multiplexed Binary Protobuf Contracts</td>
+              <td style="padding: 8px;">Sub-millisecond inter-node latency</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; font-weight: 700; color: #60a5fa;">5. Background Convergence</td>
+              <td style="padding: 8px;">Anti-Entropy Merkle Tree Exchange</td>
+              <td style="padding: 8px; color: #34d399;">Logarithmic O(log M) divergence localization</td>
+              <td style="padding: 8px;">Recovers partitioned replicas asynchronously</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="card">
       <h2 style="font-size: 16px; margin-bottom: 8px;">Active Cluster Endpoints & Ecosystem Links</h2>
       <p style="color: var(--muted); font-size: 13px;">This cluster node serves both gRPC consensus traffic and public monitoring:</p>
