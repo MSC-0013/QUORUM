@@ -1,16 +1,24 @@
 /**
- * QUORUM LAB &mdash; Distributed Consensus & Fault Injection Control Plane
+ * QUORUM LAB &mdash; Distributed Consensus & Chaos Platform
  *
- * Implements the unified monochrome design system matching SYSTEM-X:
+ * Implements the unified strict monochrome design system matching SYSTEM-X:
  * - Collapsible Left Hover Sidebar with Pin toggle
  * - Clean white background, neutral gray borders, deep black typography
- * - Interactive Cluster Topology with live node state toggling
- * - Quorum intersection proof calculator (Pigeonhole principle)
- * - Chaos fault injection simulator (Split-brain, Leader crash, Packet loss)
- * - Vector clock read-repair conflict resolver
+ * - Interactive Cluster Topology with live node state toggling (Crash / Partition)
+ * - Quorum intersection proof calculator (Pigeonhole principle: W + R > N)
+ * - Live Vector clock causality simulator & Anti-Entropy read-repair reconciler
+ * - Chaos fault injection suite (Split-brain, Leader crash, Retransmission jitter, Self-healing)
+ * - 5-Axis Decoupled Consensus Architecture matrix table
+ * - Unified Testing Ecosystem & Control API diagnostics
  */
 
-export function renderQuorumDashboard(): string {
+export function renderQuorumDashboard(
+  nodeId: string = 'qnode-01',
+  clusterId: string = 'quorum-cluster-alpha',
+  nodeState: string = 'ACTIVE_SYNC',
+  grpcPort: number = 50051,
+  httpPort: number = 8080
+): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,12 +36,15 @@ export function renderQuorumDashboard(): string {
       --bg-hover: #f4f4f5;
       --border: #e4e4e7;
       --border-dark: #18181b;
+      --border-light: #f4f4f5;
       --text: #09090b;
       --text-muted: #71717a;
+      --text-dim: #a1a1aa;
       --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --font-mono: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       --radius-sm: 4px;
       --radius-md: 6px;
+      --radius-lg: 8px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -92,7 +103,7 @@ export function renderQuorumDashboard(): string {
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 14px;
+      font-size: 13px;
       border-radius: var(--radius-sm);
       font-family: var(--font-mono);
       flex-shrink: 0;
@@ -229,6 +240,7 @@ export function renderQuorumDashboard(): string {
       gap: 6px;
       width: 100%;
       justify-content: center;
+      transition: all 0.12s ease;
     }
     .sidebar-pin-btn:hover {
       background: var(--bg-hover);
@@ -278,7 +290,7 @@ export function renderQuorumDashboard(): string {
       align-items: center;
       gap: 6px;
     }
-    .status-symbol { font-weight: bold; }
+    .status-symbol { font-weight: bold; color: var(--text); }
 
     /* Main Container */
     .main-wrap {
@@ -348,12 +360,16 @@ export function renderQuorumDashboard(): string {
       border-bottom: 1px solid var(--border);
       padding-bottom: 12px;
     }
+
     .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
     .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
     @media (max-width: 1024px) {
-      .grid-5 { grid-template-columns: repeat(2, 1fr); }
-      .grid-3, .grid-2 { grid-template-columns: 1fr; }
+      .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .grid-3, .grid-4 { grid-template-columns: 1fr; }
     }
 
     .stat-box {
@@ -422,7 +438,7 @@ export function renderQuorumDashboard(): string {
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th {
       background: var(--bg-subtle);
-      padding: 9px 12px;
+      padding: 10px 12px;
       text-align: left;
       font-weight: 600;
       font-family: var(--font-mono);
@@ -430,18 +446,18 @@ export function renderQuorumDashboard(): string {
       border-bottom: 1px solid var(--border);
       color: var(--text-muted);
     }
-    td { padding: 9px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 12px; }
 
     /* Node Card Interactive */
     .node-card {
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 14px;
+      padding: 16px;
       background: var(--bg);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 220px;
+      min-height: 250px;
       transition: border-color 0.15s ease, background 0.15s ease;
     }
     .node-card.crashed {
@@ -455,6 +471,16 @@ export function renderQuorumDashboard(): string {
     }
     .node-card.leader {
       border: 2px solid var(--text);
+    }
+
+    .vector-clock-box {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      margin: 12px 0;
     }
   </style>
 </head>
@@ -478,7 +504,7 @@ export function renderQuorumDashboard(): string {
           </div>
           <div class="side-nav-label-wrap">
             <span class="side-nav-label">Cluster Topology</span>
-            <span class="side-nav-badge">5 NODES</span>
+            <span class="side-nav-badge">3 NODES</span>
           </div>
         </button>
 
@@ -487,18 +513,8 @@ export function renderQuorumDashboard(): string {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/><circle cx="15" cy="15" r="1"/></svg>
           </div>
           <div class="side-nav-label-wrap">
-            <span class="side-nav-label">Quorum Proof (R+W&gt;N)</span>
+            <span class="side-nav-label">Quorum Proof (W+R&gt;N)</span>
             <span class="side-nav-badge">MATH</span>
-          </div>
-        </button>
-
-        <button class="side-nav-item" id="nav-faults" onclick="switchTab('faults')">
-          <div class="side-nav-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          </div>
-          <div class="side-nav-label-wrap">
-            <span class="side-nav-label">Chaos &amp; Fault Injection</span>
-            <span class="side-nav-badge">SPLIT-BRAIN</span>
           </div>
         </button>
 
@@ -507,18 +523,38 @@ export function renderQuorumDashboard(): string {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
           </div>
           <div class="side-nav-label-wrap">
-            <span class="side-nav-label">Vector Clocks &amp; Repair</span>
-            <span class="side-nav-badge">ANTI-ENTROPY</span>
+            <span class="side-nav-label">Vector Clocks &amp; LWW</span>
+            <span class="side-nav-badge">CAUSALITY</span>
           </div>
         </button>
 
-        <button class="side-nav-item" id="nav-api" onclick="switchTab('api')">
+        <button class="side-nav-item" id="nav-faults" onclick="switchTab('faults')">
           <div class="side-nav-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           </div>
           <div class="side-nav-label-wrap">
-            <span class="side-nav-label">Control API &amp; Health</span>
-            <span class="side-nav-badge">FASTIFY</span>
+            <span class="side-nav-label">Chaos &amp; Fault Injector</span>
+            <span class="side-nav-badge">SPLIT-BRAIN</span>
+          </div>
+        </button>
+
+        <button class="side-nav-item" id="nav-matrix" onclick="switchTab('matrix')">
+          <div class="side-nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+          </div>
+          <div class="side-nav-label-wrap">
+            <span class="side-nav-label">5-Axis Architecture</span>
+            <span class="side-nav-badge">MATRIX</span>
+          </div>
+        </button>
+
+        <button class="side-nav-item" id="nav-ecosystem" onclick="switchTab('ecosystem')">
+          <div class="side-nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <div class="side-nav-label-wrap">
+            <span class="side-nav-label">Ecosystem &amp; Diagnostics</span>
+            <span class="side-nav-badge">API</span>
           </div>
         </button>
       </nav>
@@ -526,8 +562,8 @@ export function renderQuorumDashboard(): string {
 
     <div class="sidebar-footer">
       <button class="sidebar-pin-btn" id="btn-pin-sidebar" onclick="toggleSidebarPin()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2l-6 6H4l4 4-6 6 6-6 4 4v-6l6-6-8-2z"/></svg>
-        <span>Pin Menu</span>
+        <span>📌</span>
+        <span>Pin Sidebar</span>
       </button>
     </div>
   </aside>
@@ -536,7 +572,7 @@ export function renderQuorumDashboard(): string {
   <header class="top-bar">
     <div class="top-bar-inner">
       <div class="header-breadcrumb">
-        QUORUM LAB / <span id="topbar-breadcrumb">Cluster Topology</span>
+        Section / <span id="topbar-breadcrumb">Cluster Topology</span>
       </div>
 
       <div class="header-status">
@@ -544,6 +580,7 @@ export function renderQuorumDashboard(): string {
         <div class="status-item"><span class="status-symbol">&bull;</span> SX: ONLINE</div>
         <div class="status-item"><span class="status-symbol">&bull;</span> BBX: ONLINE</div>
         <div class="status-item"><span class="status-symbol">&bull;</span> CRT: ONLINE</div>
+        <div class="status-item"><span class="status-symbol">&bull;</span> CLUSTER: HEALTHY</div>
         <a href="https://system-x-dashboard.onrender.com" target="_blank" class="btn btn-primary btn-sm" style="margin-left: 8px;">Launch SYSTEM-X &rarr;</a>
       </div>
     </div>
@@ -555,9 +592,9 @@ export function renderQuorumDashboard(): string {
     <!-- 1. CLUSTER TOPOLOGY TAB -->
     <div class="tab-content active" id="tab-cluster">
       <div class="page-header">
-        <h1 class="page-title">Distributed Cluster Topology &amp; Consensus Visualizer</h1>
+        <h1 class="page-title">Quorum Lab Distributed Cluster Explorer</h1>
         <p class="page-desc">
-          Inspect live node states, Raft leader terms, and commit indexes. Click any node to crash it or inject network partition latency, and observe how quorum membership dynamically protects distributed consistency.
+          Inspect Raft/Quorum node states, injected network partitions, and write consistency across replicas. Local node: <code class="mono">${nodeId}</code> &bull; Cluster: <code class="mono">${clusterId}</code> &bull; Ports: gRPC <code class="mono">:${grpcPort}</code>, HTTP <code class="mono">:${httpPort}</code>.
         </p>
       </div>
 
@@ -565,152 +602,111 @@ export function renderQuorumDashboard(): string {
       <div class="card" id="quorum-summary-card" style="border-left: 4px solid var(--text);">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
           <div>
-            <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); text-transform: uppercase;">Consensus State</div>
+            <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); text-transform: uppercase;">Consensus Health Status</div>
             <div style="font-size: 16px; font-weight: 700; margin-top: 2px;" id="quorum-summary-text">
-              ✓ QUORUM OVERLAP GUARANTEED (5/5 nodes online &bull; Raft Term: 42)
+              ✓ QUORUM OVERLAP GUARANTEED (3/3 nodes online &bull; W=2, R=2, N=3)
             </div>
           </div>
           <div style="display:flex; gap:10px;">
-            <button class="btn btn-secondary btn-sm" onclick="restoreAllNodes()">Restore All Nodes</button>
-            <button class="btn btn-primary btn-sm" onclick="switchTab('faults')">Inject Chaos Fault &rarr;</button>
+            <button class="btn btn-secondary btn-sm" onclick="restoreAllNodes()">Heal All Partitions</button>
+            <button class="btn btn-primary btn-sm" onclick="switchTab('faults')">Inject Network Partition &rarr;</button>
           </div>
         </div>
       </div>
 
-      <!-- 5-Node Interactive Grid -->
-      <div class="grid-5" style="margin-bottom: 24px;" id="node-grid">
-        <!-- Node 1 (Leader) -->
+      <!-- 3-Node Interactive Replica Grid -->
+      <div class="grid-3" style="margin-bottom: 24px;" id="node-grid">
+        <!-- Node 1 (Leader / Primary Replica) -->
         <div class="node-card leader" id="card-node-1">
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <span class="badge badge-inverse" id="badge-node-1">LEADER</span>
               <span class="mono" style="font-size:11px;" id="stat-node-1">✓ ONLINE</span>
             </div>
-            <div style="font-weight: 800; font-size: 15px;">qnode-01</div>
-            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">10.0.1.11:50051</div>
+            <div style="font-weight: 800; font-size: 15px;">Node 1 (127.0.0.1:5001)</div>
+            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">Term 3 &bull; Commit Index 1,042</div>
             
-            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.6;">
-              <div>Term: <span id="term-node-1">42</span></div>
-              <div>Commit Index: <span id="commit-node-1">12,842</span></div>
-              <div>Heartbeat: <span id="rtt-node-1">0.8 ms</span></div>
+            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.7;">
+              <div>State: <span id="state-node-1">${nodeState}</span></div>
+              <div>Storage: <span>Local WAL Disk</span></div>
+              <div>Heartbeat: <span id="rtt-node-1">4ms (Healthy)</span></div>
             </div>
           </div>
 
-          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:6px;">
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodeCrash(1)" id="btn-crash-1">Crash Node</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodePartition(1)" id="btn-part-1">Partition</button>
+          <div style="margin-top: 16px; display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="toggleNodeCrash(1)" id="btn-crash-1">Crash Node 1</button>
+            <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="toggleNodePartition(1)" id="btn-part-1">Partition</button>
           </div>
         </div>
 
-        <!-- Node 2 (Follower) -->
+        <!-- Node 2 (Follower / Secondary Replica) -->
         <div class="node-card" id="card-node-2">
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <span class="badge" id="badge-node-2">FOLLOWER</span>
               <span class="mono" style="font-size:11px;" id="stat-node-2">✓ ONLINE</span>
             </div>
-            <div style="font-weight: 800; font-size: 15px;">qnode-02</div>
-            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">10.0.1.12:50051</div>
+            <div style="font-weight: 800; font-size: 15px;">Node 2 (127.0.0.1:5002)</div>
+            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">Term 3 &bull; Commit Index 1,042</div>
             
-            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.6;">
-              <div>Term: 42</div>
-              <div>Commit Index: 12,842</div>
-              <div>Heartbeat: 1.1 ms</div>
+            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.7;">
+              <div>State: <span id="state-node-2">Active Sync</span></div>
+              <div>Storage: <span>Local WAL Disk</span></div>
+              <div>Heartbeat: <span id="rtt-node-2">6ms (Healthy)</span></div>
             </div>
           </div>
 
-          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:6px;">
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodeCrash(2)" id="btn-crash-2">Crash Node</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodePartition(2)" id="btn-part-2">Partition</button>
+          <div style="margin-top: 16px; display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="toggleNodeCrash(2)" id="btn-crash-2">Crash Node 2</button>
+            <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="toggleNodePartition(2)" id="btn-part-2">Partition</button>
           </div>
         </div>
 
-        <!-- Node 3 (Follower) -->
+        <!-- Node 3 (Follower / Tertiary Replica) -->
         <div class="node-card" id="card-node-3">
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <span class="badge" id="badge-node-3">FOLLOWER</span>
               <span class="mono" style="font-size:11px;" id="stat-node-3">✓ ONLINE</span>
             </div>
-            <div style="font-weight: 800; font-size: 15px;">qnode-03</div>
-            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">10.0.1.13:50051</div>
+            <div style="font-weight: 800; font-size: 15px;">Node 3 (127.0.0.1:5003)</div>
+            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">Term 3 &bull; Commit Index 1,042</div>
             
-            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.6;">
-              <div>Term: 42</div>
-              <div>Commit Index: 12,842</div>
-              <div>Heartbeat: 0.9 ms</div>
+            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.7;">
+              <div>State: <span id="state-node-3">Active Sync</span></div>
+              <div>Storage: <span>Local WAL Disk</span></div>
+              <div>Heartbeat: <span id="rtt-node-3">5ms (Healthy)</span></div>
             </div>
           </div>
 
-          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:6px;">
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodeCrash(3)" id="btn-crash-3">Crash Node</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodePartition(3)" id="btn-part-3">Partition</button>
-          </div>
-        </div>
-
-        <!-- Node 4 (Follower) -->
-        <div class="node-card" id="card-node-4">
-          <div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="badge" id="badge-node-4">FOLLOWER</span>
-              <span class="mono" style="font-size:11px;" id="stat-node-4">✓ ONLINE</span>
-            </div>
-            <div style="font-weight: 800; font-size: 15px;">qnode-04</div>
-            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">10.0.1.14:50051</div>
-            
-            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.6;">
-              <div>Term: 42</div>
-              <div>Commit Index: 12,841</div>
-              <div>Heartbeat: 1.4 ms</div>
-            </div>
-          </div>
-
-          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:6px;">
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodeCrash(4)" id="btn-crash-4">Crash Node</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodePartition(4)" id="btn-part-4">Partition</button>
-          </div>
-        </div>
-
-        <!-- Node 5 (Follower) -->
-        <div class="node-card" id="card-node-5">
-          <div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="badge" id="badge-node-5">FOLLOWER</span>
-              <span class="mono" style="font-size:11px;" id="stat-node-5">✓ ONLINE</span>
-            </div>
-            <div style="font-weight: 800; font-size: 15px;">qnode-05</div>
-            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top:2px;">10.0.1.15:50051</div>
-            
-            <div style="margin-top: 14px; font-size: 11px; font-family: var(--font-mono); line-height: 1.6;">
-              <div>Term: 42</div>
-              <div>Commit Index: 12,842</div>
-              <div>Heartbeat: 1.0 ms</div>
-            </div>
-          </div>
-
-          <div style="margin-top: 16px; display:flex; flex-direction:column; gap:6px;">
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodeCrash(5)" id="btn-crash-5">Crash Node</button>
-            <button class="btn btn-secondary btn-sm" onclick="toggleNodePartition(5)" id="btn-part-5">Partition</button>
+          <div style="margin-top: 16px; display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="toggleNodeCrash(3)" id="btn-crash-3">Crash Node 3</button>
+            <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="toggleNodePartition(3)" id="btn-part-3">Partition</button>
           </div>
         </div>
       </div>
 
       <!-- Quick Metrics Summary -->
-      <div class="grid-3">
-        <div class="card">
+      <div class="grid-4">
+        <div class="stat-box">
           <div class="stat-label">Active Membership</div>
-          <div class="stat-val" id="metric-alive-count">5 / 5</div>
-          <div class="stat-desc">Quorum threshold: &ge; 3 nodes</div>
+          <div class="stat-val" id="metric-alive-count">3 / 3</div>
+          <div class="stat-desc">Quorum threshold: &ge; 2 nodes</div>
         </div>
-        <div class="card">
-          <div class="stat-label">Consensus Protocol</div>
-          <div class="stat-val">Raft &bull; Strict</div>
-          <div class="stat-desc">Zero stale reads on leader lease</div>
+        <div class="stat-box">
+          <div class="stat-label">Replication Policy</div>
+          <div class="stat-val">W=2, R=2</div>
+          <div class="stat-desc">Dynamo-style Leaderless</div>
         </div>
-        <div class="card">
-          <div class="stat-label">Replica Log Lag</div>
-          <div class="stat-val">0.2 ms</div>
-          <div class="stat-desc">Within replication SLA (&lt; 5ms)</div>
+        <div class="stat-box">
+          <div class="stat-label">Storage Engine</div>
+          <div class="stat-val">WAL fsync</div>
+          <div class="stat-desc">MemStore + AOF Durability</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Durability Guarantee</div>
+          <div class="stat-val">Zero Loss</div>
+          <div class="stat-desc">Crash-replay verified</div>
         </div>
       </div>
     </div>
@@ -718,64 +714,65 @@ export function renderQuorumDashboard(): string {
     <!-- 2. QUORUM CALCULATOR TAB -->
     <div class="tab-content" id="tab-quorum">
       <div class="page-header">
-        <h1 class="page-title">Quorum Intersection Proof &amp; Policy Calculator</h1>
+        <h1 class="page-title">Interactive Quorum Consistency Calculator</h1>
         <p class="page-desc">
-          Verify distributed consistency guarantees mathematically. By the Pigeonhole Principle, if Read Quorum (R) + Write Quorum (W) &gt; Cluster Size (N), every read set intersects with at least one node containing the latest write.
+          Dynamically compute write/read consistency and fault tolerance by the Pigeonhole Principle. When <code class="mono">W + R &gt; N</code>, read-repair guarantees that every read set contains the latest committed write.
         </p>
       </div>
 
       <div class="grid-2">
-        <!-- Interactive Sliders -->
+        <!-- Sliders Form -->
         <div class="card">
           <div class="card-title">
-            <span>Cluster &amp; Quorum Parameters</span>
+            <span>Quorum Parameters</span>
             <span class="badge">CONFIG</span>
           </div>
 
           <div style="margin-bottom: 16px;">
             <label style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; margin-bottom:6px;">
               <span>Cluster Size (N):</span>
-              <span class="mono" id="q-val-n">5</span>
+              <span class="mono" id="q-val-n">3 nodes</span>
             </label>
-            <input type="range" min="3" max="11" step="2" value="5" id="q-inp-n" oninput="calcQuorumProof()" style="width:100%;" />
+            <input type="range" min="3" max="9" step="2" value="3" id="q-inp-n" oninput="calcQuorumProof()" style="width:100%;" />
           </div>
 
           <div style="margin-bottom: 16px;">
             <label style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; margin-bottom:6px;">
-              <span>Read Quorum (R):</span>
-              <span class="mono" id="q-val-r">3</span>
+              <span>Write Quorum (W):</span>
+              <span class="mono" id="q-val-w">2 nodes</span>
             </label>
-            <input type="range" min="1" max="5" step="1" value="3" id="q-inp-r" oninput="calcQuorumProof()" style="width:100%;" />
+            <input type="range" min="1" max="3" step="1" value="2" id="q-inp-w" oninput="calcQuorumProof()" style="width:100%;" />
           </div>
 
           <div style="margin-bottom: 20px;">
             <label style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; margin-bottom:6px;">
-              <span>Write Quorum (W):</span>
-              <span class="mono" id="q-val-w">3</span>
+              <span>Read Quorum (R):</span>
+              <span class="mono" id="q-val-r">2 nodes</span>
             </label>
-            <input type="range" min="1" max="5" step="1" value="3" id="q-inp-w" oninput="calcQuorumProof()" style="width:100%;" />
+            <input type="range" min="1" max="3" step="1" value="2" id="q-inp-r" oninput="calcQuorumProof()" style="width:100%;" />
           </div>
 
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 3, 3)">Strict Majority (3/3/5)</button>
-            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 1, 5)">Fast Read (1/5/5)</button>
-            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 5, 1)">Fast Write (5/1/5)</button>
-            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 2, 2)">Sloppy (2/2/5)</button>
+            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(3, 2, 2)">Strict Majority (3/2/2)</button>
+            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 3, 3)">5-Node Majority (5/3/3)</button>
+            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 1, 5)">Fast Read (5/1/5)</button>
+            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 5, 1)">Fast Write (5/5/1)</button>
+            <button class="btn btn-secondary btn-sm" onclick="setQuorumPreset(5, 2, 2)">Sloppy (5/2/2)</button>
           </div>
         </div>
 
-        <!-- Mathematical Proof Card -->
+        <!-- Mathematical Proof & Tolerances -->
         <div class="card">
           <div class="card-title">
-            <span>Mathematical Intersection Analysis</span>
-            <span class="badge" id="proof-status-badge">✓ CONSISTENT</span>
+            <span>Consistency &amp; Fault Tolerance Guarantees</span>
+            <span class="badge" id="proof-status-badge">✓ STRONG CONSISTENCY</span>
           </div>
 
           <div class="grid-2" style="margin-bottom: 16px;">
             <div class="stat-box">
-              <div class="stat-label">R + W Condition</div>
-              <div class="stat-val" id="proof-rw-val">6 &gt; 5</div>
-              <div class="stat-desc" id="proof-rw-desc">Condition satisfied (R+W &gt; N)</div>
+              <div class="stat-label">W + R Condition</div>
+              <div class="stat-val" id="proof-rw-val">4 &gt; 3</div>
+              <div class="stat-desc" id="proof-rw-desc">Condition satisfied (W+R &gt; N)</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Guaranteed Overlap</div>
@@ -784,20 +781,86 @@ export function renderQuorumDashboard(): string {
             </div>
           </div>
 
+          <div class="grid-2" style="margin-bottom: 16px;">
+            <div class="stat-box">
+              <div class="stat-label">Write Fault Tolerance</div>
+              <div class="stat-val" id="res-write-tol">1 Node</div>
+              <div class="stat-desc">Tolerable write node failures (N - W)</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Read Fault Tolerance</div>
+              <div class="stat-val" id="res-read-tol">1 Node</div>
+              <div class="stat-desc">Tolerable read node failures (N - R)</div>
+            </div>
+          </div>
+
           <div style="padding: 12px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; line-height: 1.6;" id="proof-explanation">
-            Overlap Formula: (R + W) - N = (3 + 3) - 5 = 1 node.<br/>
-            Guarantee: At least 1 node in any read set is guaranteed to possess the authoritative latest write. Linearizable consistency maintained.
+            Overlap Formula: (W + R) - N = (2 + 2) - 3 = 1 node.<br/>
+            Guaranteed read-your-writes and monotonic read consistency. Zero stale reads across any responding quorum set.
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 3. CHAOS & FAULT INJECTION TAB -->
+    <!-- 3. VECTOR CLOCKS & LWW SIMULATOR TAB -->
+    <div class="tab-content" id="tab-consistency">
+      <div class="page-header">
+        <h1 class="page-title">Live Vector Clock Causality &amp; LWW Simulator</h1>
+        <p class="page-desc">
+          Simulate concurrent writes across cluster replicas to see causal vector clock evolution, conflict detection, and anti-entropy read-repair reconciliation.
+        </p>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 24px;">
+        <div class="card">
+          <div class="card-title">
+            <span>Simulate Node Writes</span>
+            <span class="badge">MUTATION</span>
+          </div>
+          <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+            Issue client writes directly to independent replicas to simulate divergent timelines:
+          </p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+            <button class="btn btn-secondary btn-sm" onclick="writeNode('node-a')">✍ Write to Node A</button>
+            <button class="btn btn-secondary btn-sm" onclick="writeNode('node-b')">✍ Write to Node B</button>
+            <button class="btn btn-secondary btn-sm" onclick="writeNode('node-c')">✍ Write to Node C</button>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm" onclick="syncClocks()">🔄 Anti-Entropy Sync</button>
+            <button class="btn btn-secondary btn-sm" onclick="executeReadRepair()">🛠 Read-Repair</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetClocks()">❌ Reset Genesis</button>
+          </div>
+
+          <div class="vector-clock-box" id="vc-display">
+            Current Vector Clock: { "node-a": 0, "node-b": 0, "node-c": 0 }
+          </div>
+          <div id="vc-explanation" style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">
+            Cluster state synchronized. Zero pending causal conflicts.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Causal Analysis &amp; Anti-Entropy Log</span>
+            <span class="badge" id="repair-badge">SYNCHRONIZED</span>
+          </div>
+          <div style="font-size: 12px; line-height: 1.6; font-family: var(--font-mono); background: var(--bg-subtle); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); height: 210px; overflow-y: auto;" id="repair-output">
+            [CAUSALITY ENGINE INITIALIZED]<br/>
+            &bull; Partial-order happened-before tracking active.<br/>
+            &bull; Tie-breaking strategy: Last-Write-Wins (LWW) with wall-clock fallback.<br/>
+            &bull; Anti-entropy Merkle exchange listening on port 50051.<br/>
+            &bull; Awaiting write events...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. CHAOS & FAULT INJECTION TAB -->
     <div class="tab-content" id="tab-faults">
       <div class="page-header">
         <h1 class="page-title">Chaos Fault Injection Suite</h1>
         <p class="page-desc">
-          Test distributed consensus limits under network partitions, leader crashes, and packet drops. Validate epoch fencing and automatic failover.
+          Inject distributed failure scenarios into the consensus engine to validate election timeouts, partition fencing, and automated healing.
         </p>
       </div>
 
@@ -809,118 +872,171 @@ export function renderQuorumDashboard(): string {
             <span class="badge">MAJORITY GUARD</span>
           </div>
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            Splits the 5-node cluster into Partition A ({qnode-01, qnode-02}) and Partition B ({qnode-03, qnode-04, qnode-05}). Tests whether Partition A safely stops accepting writes while Partition B elects a new leader.
+            Isolates Node 3 from the quorum. Validates that the majority partition {Node 1, Node 2} continues processing writes while the isolated node fences itself.
           </p>
-          <button class="btn btn-primary" onclick="simulateChaos('split-brain')">Simulate Split-Brain Partition</button>
+          <button class="btn btn-primary btn-sm" onclick="simulateChaos('split-brain')">Simulate Split-Brain Partition</button>
         </div>
 
         <!-- Scenario 2: Leader Crash -->
         <div class="card">
           <div class="card-title">
             <span>Scenario B &bull; Sudden Leader Crash</span>
-            <span class="badge">RAFT TIMEOUT</span>
+            <span class="badge">ELECTION TIMEOUT</span>
           </div>
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            Terminates the active leader (qnode-01) during a replication commit phase. Measures election timeout duration and confirms candidate term increment.
+            Terminates the primary leader (Node 1) mid-commit. Measures election timeout and verifies that Node 2 receives votes and ascends to Leader.
           </p>
-          <button class="btn btn-primary" onclick="simulateChaos('leader-crash')">Simulate Leader Crash</button>
+          <button class="btn btn-primary btn-sm" onclick="simulateChaos('leader-crash')">Simulate Leader Crash</button>
         </div>
 
         <!-- Scenario 3: Packet Drop -->
         <div class="card">
           <div class="card-title">
             <span>Scenario C &bull; 30% Retransmission Jitter</span>
-            <span class="badge">HEARTBEAT JITTER</span>
+            <span class="badge">JITTER INJECTION</span>
           </div>
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            Injects 250ms packet latency and 30% TCP packet drops between followers. Validates heartbeat retry backoff without triggering spurious re-elections.
+            Injects 200ms packet latency and 30% TCP packet loss between replicas. Confirms heartbeat retry backoff without triggering spurious re-elections.
           </p>
-          <button class="btn btn-primary" onclick="simulateChaos('packet-drop')">Simulate Retransmission Jitter</button>
+          <button class="btn btn-primary btn-sm" onclick="simulateChaos('packet-drop')">Simulate Retransmission Jitter</button>
         </div>
 
         <!-- Scenario 4: Fast Recovery -->
         <div class="card">
           <div class="card-title">
             <span>Scenario D &bull; Cluster Self-Healing</span>
-            <span class="badge">RECONCILIATION</span>
+            <span class="badge">CATCH-UP SYNC</span>
           </div>
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            Heals all network partitions, restarts crashed nodes, and runs catch-up log replication to restore 100% synchronized state.
+            Heals all partitions, restarts crashed replicas, and initiates AppendEntries catch-up replay from the authoritative WAL log.
           </p>
-          <button class="btn btn-secondary" onclick="simulateChaos('heal')">Restore Cluster &amp; Catch Up Logs</button>
+          <button class="btn btn-secondary btn-sm" onclick="simulateChaos('heal')">Restore Cluster &amp; Catch Up Logs</button>
         </div>
       </div>
 
-      <!-- Chaos Event Log -->
+      <!-- Live Event Log -->
       <div class="card">
         <div class="card-title">
-          <span>Consensus Event Log &amp; State Transitions</span>
+          <span>Consensus Event Log &amp; Audit Trail</span>
           <span class="badge">LIVE AUDIT</span>
         </div>
-        <div id="chaos-log" style="height: 160px; overflow-y: auto; background: var(--bg-subtle); border: 1px solid var(--border); padding: 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.6;">
-          [00:00:00] Cluster initialized with 5 nodes. Leader: qnode-01 (Term 42).<br/>
-          [00:00:01] Heartbeat ticks normal (0.8ms - 1.4ms). Commit index matching across all replicas.<br/>
+        <div id="chaos-log" style="height: 160px; overflow-y: auto; background: var(--bg-subtle); border: 1px solid var(--border); padding: 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.7;">
+          [00:00:00] Cluster initialized with 3 nodes. Leader: Node 1 (Term 3).<br/>
+          [00:00:01] Heartbeat ticks normal (4ms - 6ms). Commit index 1,042 matching across all replicas.<br/>
           [00:00:02] Ready for fault injection.
         </div>
       </div>
     </div>
 
-    <!-- 4. VECTOR CLOCKS & READ-REPAIR TAB -->
-    <div class="tab-content" id="tab-consistency">
+    <!-- 5. 5-AXIS CONSENSUS MATRIX TAB -->
+    <div class="tab-content" id="tab-matrix">
       <div class="page-header">
-        <h1 class="page-title">Vector Clocks &amp; Anti-Entropy Read-Repair</h1>
+        <h1 class="page-title">5-Axis Decoupled Consensus Architecture Matrix</h1>
         <p class="page-desc">
-          When concurrent writes occur during network hiccups, vector clocks preserve causal history. Read-repair identifies divergent replicas on client read operations and reconciles them automatically.
-        </p>
-      </div>
-
-      <div class="grid-2" style="margin-bottom: 24px;">
-        <div class="card">
-          <div class="card-title">
-            <span>Replica Node State &bull; Conflict Inspection</span>
-            <span class="badge">DIVERGENCE</span>
-          </div>
-          <div style="font-family: var(--font-mono); font-size: 12px; margin-bottom: 14px;">
-            <div style="padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px;">
-              <strong>Node 1 (Stale):</strong><br/>
-              Key: <span class="mono">inv:prod_101</span> &bull; Stock: <span id="vclock-val-1">10</span><br/>
-              Clock: <span id="vclock-clock-1">[q1: 4, q2: 1]</span>
-            </div>
-            <div style="padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);">
-              <strong>Node 2 (Authoritative):</strong><br/>
-              Key: <span class="mono">inv:prod_101</span> &bull; Stock: 9<br/>
-              Clock: [q1: 4, q2: 2]
-            </div>
-          </div>
-          <button class="btn btn-primary" onclick="executeReadRepair()" id="btn-read-repair">Execute Read-Repair Reconciliation &rarr;</button>
-        </div>
-
-        <div class="card">
-          <div class="card-title">
-            <span>Causal Analysis &amp; Reconciliation</span>
-            <span class="badge" id="repair-badge">CONFLICT DETECTED</span>
-          </div>
-          <div style="font-size: 12px; line-height: 1.6; font-family: var(--font-mono); background: var(--bg-subtle); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);" id="repair-output">
-            Causal check: Node 2 clock [q1: 4, q2: 2] dominates Node 1 [q1: 4, q2: 1].<br/>
-            Node 1 is missing revision 2 from qnode-02.<br/>
-            Read-repair will write back authoritative value 'stock: 9' to Node 1.
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5. CONTROL API & HEALTH TAB -->
-    <div class="tab-content" id="tab-api">
-      <div class="page-header">
-        <h1 class="page-title">Control API Diagnostics &amp; Routes</h1>
-        <p class="page-desc">
-          Standard REST &amp; gRPC endpoints provided by the QUORUM LAB control-api service.
+          QUORUM LAB explicitly decouples consensus into 5 independent architectural axes for maximum production resilience and zero lost writes.
         </p>
       </div>
 
       <div class="card">
         <div class="card-title">
-          <span>Active Service Endpoints</span>
+          <span>Decoupled Consensus Architecture Breakdown</span>
+          <span class="badge">INVARIANTS</span>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Architecture Axis</th>
+                <th>Implementation</th>
+                <th>Guarantees &amp; Invariants</th>
+                <th>Fault Tolerance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700;">1. Replication Topology</td>
+                <td>Leaderless Dynamo (N=3, W=2, R=2)</td>
+                <td>W + R &gt; N (4 &gt; 3) Quorum Overlap</td>
+                <td>Survives 1 concurrent node failure</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700;">2. Storage Engine</td>
+                <td>Sequential WAL fsync + MemStore</td>
+                <td>AOF Append-Only Log with Zero Lost Writes</td>
+                <td>Instant crash-replay recovery</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700;">3. Causality Tracking</td>
+                <td>Vector Clocks &amp; Version Dots</td>
+                <td>Causal Partial-Order Happened-Before</td>
+                <td>Last-Write-Wins (LWW) conflict tie-break</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700;">4. Cluster Transport</td>
+                <td>High-Throughput gRPC (:50051)</td>
+                <td>HTTP/2 Multiplexed Binary Protobuf Contracts</td>
+                <td>Sub-millisecond inter-node latency</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700;">5. Background Convergence</td>
+                <td>Anti-Entropy Merkle Tree Exchange</td>
+                <td>Logarithmic O(log M) divergence localization</td>
+                <td>Recovers partitioned replicas asynchronously</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. ECOSYSTEM & DIAGNOSTICS TAB -->
+    <div class="tab-content" id="tab-ecosystem">
+      <div class="page-header">
+        <h1 class="page-title">Unified Testing Ecosystem &amp; Diagnostics</h1>
+        <p class="page-desc">
+          QUORUM LAB serves as the ground-truth distributed storage and consensus engine for the SYSTEM-X verification and BLACKBOX-X performance suites.
+        </p>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 20px;">
+        <div class="card">
+          <div class="card-title">
+            <span>Direct Portal Links</span>
+            <span class="badge">ECOSYSTEM</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <a href="https://system-x-dashboard.onrender.com" target="_blank" class="btn btn-primary" style="justify-content:flex-start;">
+              🚀 SYSTEM-X Unified Testing Center &rarr;
+            </a>
+            <a href="https://blackbox-x.onrender.com" target="_blank" class="btn btn-secondary" style="justify-content:flex-start;">
+              ⚡ BLACKBOX-X Performance Engine &rarr;
+            </a>
+            <a href="https://github.com/MSC-0013/QUORUM" target="_blank" class="btn btn-secondary" style="justify-content:flex-start;">
+              💻 GitHub: MSC-0013/QUORUM &rarr;
+            </a>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Service Diagnostic Endpoints</span>
+            <span class="badge">DIAGNOSTICS</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <a href="/?format=json" target="_blank" class="btn btn-secondary" style="justify-content:flex-start;">
+              📄 Raw JSON Status (/?format=json)
+            </a>
+            <a href="/health" target="_blank" class="btn btn-secondary" style="justify-content:flex-start;">
+              🩺 Node Liveness Check (/health)
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Control API Routes Table -->
+      <div class="card">
+        <div class="card-title">
+          <span>Active Service REST &amp; gRPC Routes</span>
           <span class="badge">FASTIFY 5.x</span>
         </div>
         <div style="overflow-x:auto;">
@@ -939,6 +1055,12 @@ export function renderQuorumDashboard(): string {
                 <td><code>/health</code></td>
                 <td>Liveness check</td>
                 <td><a href="/health" target="_blank" class="btn btn-secondary btn-sm">Inspect /health</a></td>
+              </tr>
+              <tr>
+                <td><strong>GET</strong></td>
+                <td><code>/?format=json</code></td>
+                <td>Raw Node JSON Telemetry</td>
+                <td><a href="/?format=json" target="_blank" class="btn btn-secondary btn-sm">Inspect /?format=json</a></td>
               </tr>
               <tr>
                 <td><strong>GET</strong></td>
@@ -973,8 +1095,9 @@ export function renderQuorumDashboard(): string {
   </footer>
 
   <script>
-    var nodeStates = [true, true, true, true, true]; // 1-indexed in UI
-    var partitionedNodes = [false, false, false, false, false];
+    var nodeStates = [true, true, true]; // 1-indexed in UI
+    var partitionedNodes = [false, false, false];
+    var vc = { 'node-a': 0, 'node-b': 0, 'node-c': 0 };
 
     function switchTab(tabId) {
       document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
@@ -987,10 +1110,11 @@ export function renderQuorumDashboard(): string {
 
       var titles = {
         'cluster': 'Cluster Topology',
-        'quorum': 'Quorum Proof (R+W>N)',
-        'faults': 'Chaos & Fault Injection',
-        'consistency': 'Vector Clocks & Read-Repair',
-        'api': 'Control API & Health'
+        'quorum': 'Quorum Proof (W+R>N)',
+        'consistency': 'Vector Clocks & LWW',
+        'faults': 'Chaos & Fault Injector',
+        'matrix': '5-Axis Architecture',
+        'ecosystem': 'Ecosystem & Diagnostics'
       };
       var bc = document.getElementById('topbar-breadcrumb');
       if (bc && titles[tabId]) bc.textContent = titles[tabId];
@@ -1021,13 +1145,13 @@ export function renderQuorumDashboard(): string {
     }
 
     function restoreAllNodes() {
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 3; i++) {
         nodeStates[i] = true;
         partitionedNodes[i] = false;
         updateNodeUI(i + 1);
       }
       evaluateQuorumHealth();
-      logEvent('All nodes restored to ONLINE. Quorum membership restored to 5/5.');
+      logEvent('All partitions healed and nodes restored to ONLINE. Quorum membership restored to 3/3.');
     }
 
     function updateNodeUI(nodeIdx) {
@@ -1042,49 +1166,55 @@ export function renderQuorumDashboard(): string {
       if (!nodeStates[arrIdx]) {
         card.className = 'node-card crashed';
         stat.textContent = '! CRASHED';
-        btnCrash.textContent = 'Restore Node';
+        btnCrash.textContent = 'Restore Node ' + nodeIdx;
       } else if (partitionedNodes[arrIdx]) {
         card.className = 'node-card partitioned';
         stat.textContent = '~ ISOLATED';
-        btnCrash.textContent = 'Crash Node';
-        btnPart.textContent = 'Rejoin';
+        btnCrash.textContent = 'Crash Node ' + nodeIdx;
+        btnPart.textContent = 'Heal Partition';
       } else {
         card.className = nodeIdx === 1 ? 'node-card leader' : 'node-card';
         stat.textContent = '✓ ONLINE';
-        btnCrash.textContent = 'Crash Node';
+        btnCrash.textContent = 'Crash Node ' + nodeIdx;
         btnPart.textContent = 'Partition';
       }
     }
 
     function evaluateQuorumHealth() {
       var activeCount = 0;
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 3; i++) {
         if (nodeStates[i] && !partitionedNodes[i]) activeCount++;
       }
 
       var textEl = document.getElementById('quorum-summary-text');
       var metricEl = document.getElementById('metric-alive-count');
-      if (metricEl) metricEl.textContent = activeCount + ' / 5';
+      if (metricEl) metricEl.textContent = activeCount + ' / 3';
 
-      if (activeCount >= 3) {
-        textEl.textContent = '✓ QUORUM OVERLAP GUARANTEED (' + activeCount + '/5 nodes online • Term: 42)';
+      if (activeCount >= 2) {
+        textEl.textContent = '✓ QUORUM OVERLAP GUARANTEED (' + activeCount + '/3 nodes online • W=2, R=2, N=3)';
         textEl.style.color = 'var(--text)';
       } else {
-        textEl.textContent = '! QUORUM LOST (' + activeCount + '/5 nodes online • Writes BLOCKED, Read Quorum Failed)';
-        textEl.style.color = '#71717a';
+        textEl.textContent = '! QUORUM LOST (' + activeCount + '/3 nodes online • Writes BLOCKED, Read Quorum Failed)';
+        textEl.style.color = 'var(--text-muted)';
       }
     }
 
     function calcQuorumProof() {
       var n = parseInt(document.getElementById('q-inp-n').value);
-      var r = parseInt(document.getElementById('q-inp-r').value);
-      var w = parseInt(document.getElementById('q-inp-w').value);
+      var inpW = document.getElementById('q-inp-w');
+      var inpR = document.getElementById('q-inp-r');
 
-      document.getElementById('q-val-n').textContent = n;
-      document.getElementById('q-val-r').textContent = r;
-      document.getElementById('q-val-w').textContent = w;
+      inpW.max = n;
+      inpR.max = n;
 
-      var sum = r + w;
+      var w = parseInt(inpW.value);
+      var r = parseInt(inpR.value);
+
+      document.getElementById('q-val-n').textContent = n + ' nodes';
+      document.getElementById('q-val-w').textContent = w + ' nodes';
+      document.getElementById('q-val-r').textContent = r + ' nodes';
+
+      var sum = w + r;
       var overlap = sum - n;
       var badge = document.getElementById('proof-status-badge');
       var rwVal = document.getElementById('proof-rw-val');
@@ -1095,54 +1225,101 @@ export function renderQuorumDashboard(): string {
       rwVal.textContent = sum + ' ' + (sum > n ? '>' : '<=') + ' ' + n;
 
       if (sum > n) {
-        badge.textContent = '✓ CONSISTENT';
+        badge.textContent = '✓ STRONG CONSISTENCY';
         badge.className = 'badge';
-        rwDesc.textContent = 'Strict consistency guaranteed (R+W > N)';
+        rwDesc.textContent = 'Condition satisfied (W+R > N)';
         overlapVal.textContent = overlap + ' Node' + (overlap > 1 ? 's' : '');
-        expl.innerHTML = 'Overlap Formula: (R + W) - N = (' + r + ' + ' + w + ') - ' + n + ' = ' + overlap + ' node(s).<br/>' +
-          'Guarantee: At least ' + overlap + ' node(s) in any read set are guaranteed to possess the authoritative latest write. No stale reads.';
+        expl.innerHTML = 'Overlap Formula: (W + R) - N = (' + w + ' + ' + r + ') - ' + n + ' = ' + overlap + ' node(s).<br/>' +
+          'Guaranteed read-your-writes and monotonic read consistency. Zero stale reads across any responding quorum set.';
       } else {
         badge.textContent = '! RISK OF STALE READS';
         badge.className = 'badge badge-alert';
-        rwDesc.textContent = 'Weak consistency: Read/Write sets may not overlap';
+        rwDesc.textContent = 'Weak consistency: Overlap not guaranteed';
         overlapVal.textContent = '0 Nodes';
-        expl.innerHTML = 'Overlap Formula: (R + W) - N = (' + r + ' + ' + w + ') - ' + n + ' = ' + overlap + ' node(s).<br/>' +
+        expl.innerHTML = 'Overlap Formula: (W + R) - N = (' + w + ' + ' + r + ') - ' + n + ' = ' + overlap + ' node(s).<br/>' +
           'Warning: Without overlap, a read request may contact nodes that did not receive the latest write, returning stale data unless resolved by vector clocks or read-repair.';
+      }
+
+      document.getElementById('res-write-tol').textContent = (n - w) + ' Node(s)';
+      document.getElementById('res-read-tol').textContent = (n - r) + ' Node(s)';
+    }
+
+    function setQuorumPreset(n, w, r) {
+      document.getElementById('q-inp-n').value = n;
+      var inpW = document.getElementById('q-inp-w');
+      var inpR = document.getElementById('q-inp-r');
+      inpW.max = n;
+      inpR.max = n;
+      inpW.value = w;
+      inpR.value = r;
+      calcQuorumProof();
+    }
+
+    function updateVcDisplay(text) {
+      document.getElementById('vc-display').textContent = 'Current Vector Clock: ' + JSON.stringify(vc);
+      if (text) {
+        document.getElementById('vc-explanation').textContent = text;
       }
     }
 
-    function setQuorumPreset(n, r, w) {
-      document.getElementById('q-inp-n').value = n;
-      document.getElementById('q-inp-r').max = n;
-      document.getElementById('q-inp-w').max = n;
-      document.getElementById('q-inp-r').value = r;
-      document.getElementById('q-inp-w').value = w;
-      calcQuorumProof();
+    function writeNode(id) {
+      vc[id] = (vc[id] || 0) + 1;
+      updateVcDisplay('Local write acknowledged on ' + id + '. Version dot assigned: (' + id + ', ' + vc[id] + ').');
+      logRepair('[WRITE] Key: inv:prod_101 written to ' + id + ' -> Clock: ' + JSON.stringify(vc));
+    }
+
+    function syncClocks() {
+      var maxVal = Math.max(vc['node-a'], vc['node-b'], vc['node-c']);
+      vc['node-a'] = maxVal;
+      vc['node-b'] = maxVal;
+      vc['node-c'] = maxVal;
+      updateVcDisplay('Anti-Entropy Merkle exchange reconciled. All replica clocks merged to epoch ' + maxVal + '.');
+      logRepair('[ANTI-ENTROPY] Merkle tree exchange converged. All replicas unified to epoch ' + maxVal + '.');
+    }
+
+    function resetClocks() {
+      vc = { 'node-a': 0, 'node-b': 0, 'node-c': 0 };
+      updateVcDisplay('Cluster state reset to genesis epoch 0.');
+      logRepair('[RESET] Replicas reset to genesis epoch.');
+    }
+
+    function executeReadRepair() {
+      var maxVal = Math.max(vc['node-a'], vc['node-b'], vc['node-c']);
+      if (maxVal === 0) { maxVal = 1; vc['node-a'] = 1; }
+      vc['node-a'] = maxVal;
+      vc['node-b'] = maxVal;
+      vc['node-c'] = maxVal;
+      updateVcDisplay('Read-Repair complete: authoritative value and version dot propagated to all replicas.');
+      logRepair('[READ-REPAIR] Client read detected divergence. Authoritative value written back to lagging replicas.');
+    }
+
+    function logRepair(msg) {
+      var box = document.getElementById('repair-output');
+      var now = new Date().toTimeString().split(' ')[0];
+      box.innerHTML += '<br/>[' + now + '] ' + msg;
+      box.scrollTop = box.scrollHeight;
     }
 
     function simulateChaos(type) {
       if (type === 'split-brain') {
-        partitionedNodes[0] = true;
-        partitionedNodes[1] = true;
-        updateNodeUI(1);
-        updateNodeUI(2);
+        partitionedNodes[2] = true;
+        updateNodeUI(3);
         evaluateQuorumHealth();
-        logEvent('CHAOS: Symmetric Network Partition injected. Minority {qnode-01, qnode-02} isolated.');
-        logEvent('CONSENSUS: Minority partition rejected client writes (2/5 < Quorum threshold 3).');
-        logEvent('LEADER: Majority partition {qnode-03, qnode-04, qnode-05} elected qnode-03 as new leader (Term 43).');
+        logEvent('CHAOS: Network partition injected. Node 3 isolated from cluster.');
+        logEvent('CONSENSUS: Majority partition {Node 1, Node 2} retained quorum (2/3 &ge; W=2). Writes continue.');
       } else if (type === 'leader-crash') {
         nodeStates[0] = false;
         updateNodeUI(1);
         evaluateQuorumHealth();
-        logEvent('CHAOS: Leader qnode-01 crashed unexpectedly during commit phase.');
+        logEvent('CHAOS: Leader Node 1 crashed unexpectedly during commit phase.');
         logEvent('HEARTBEAT: Follower election timer expired after 180ms.');
-        logEvent('ELECTION: qnode-02 stepped up as Candidate, received 3 votes, became new Leader for Term 43.');
+        logEvent('ELECTION: Node 2 received vote from Node 3 and ascended to Leader (Term 4).');
       } else if (type === 'packet-drop') {
-        logEvent('CHAOS: 30% TCP packet drop and 250ms synthetic latency injected across followers.');
-        logEvent('MONITOR: Replication latency spiked to 258ms. Quorum writes succeeded via earliest responding majority.');
+        logEvent('CHAOS: 30% TCP packet loss & 200ms latency injected across inter-node links.');
+        logEvent('MONITOR: Inter-node heartbeat retransmitted. Quorum maintained via earliest responding replicas.');
       } else if (type === 'heal') {
         restoreAllNodes();
-        logEvent('HEAL: Network healed. Stale logs catch-up replication completed via Raft AppendEntries RPC.');
+        logEvent('HEAL: Network healed. Stale logs catch-up replication completed via AppendEntries RPC.');
       }
     }
 
@@ -1151,23 +1328,6 @@ export function renderQuorumDashboard(): string {
       var now = new Date().toTimeString().split(' ')[0];
       log.innerHTML += '<br/>[' + now + '] ' + msg;
       log.scrollTop = log.scrollHeight;
-    }
-
-    function executeReadRepair() {
-      var valEl = document.getElementById('vclock-val-1');
-      var clockEl = document.getElementById('vclock-clock-1');
-      var badge = document.getElementById('repair-badge');
-      var out = document.getElementById('repair-output');
-
-      valEl.textContent = '9';
-      clockEl.textContent = '[q1: 4, q2: 2]';
-      badge.textContent = '✓ RECONCILED';
-      badge.className = 'badge';
-
-      out.innerHTML = 'Read-Repair Complete:<br/>' +
-        '&bull; Stale replica Node 1 updated to latest value: 9<br/>' +
-        '&bull; Vector clock updated to authoritative timestamp [q1: 4, q2: 2]<br/>' +
-        '&bull; Anti-entropy verified across all cluster replicas with zero data loss.';
     }
   </script>
 </body>
